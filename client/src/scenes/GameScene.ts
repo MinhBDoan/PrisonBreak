@@ -39,6 +39,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.runData = data;
+    this.lastEventCount = 0;
+    this.completionShown = false;
     this.cameras.main.setBackgroundColor("#081018");
     this.simulation = new GameSimulation({ nextRunConfig: data.config });
     this.viewRenderer = new GameRenderer();
