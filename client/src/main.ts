@@ -3,6 +3,7 @@ import "./styles.css";
 import { BootScene } from "./scenes/BootScene";
 import { GameScene } from "./scenes/GameScene";
 import { MenuScene } from "./scenes/MenuScene";
+import { ReportScene } from "./scenes/ReportScene";
 
 new Phaser.Game({
   type: Phaser.AUTO,
@@ -10,5 +11,5 @@ new Phaser.Game({
   width: 960,
   height: 540,
   pixelArt: true,
-  scene: [BootScene, MenuScene, GameScene],
+  scene: [BootScene, MenuScene, GameScene, ReportScene],
 });

@@ -1,5 +1,6 @@
 import { prisonMap } from "../game/map";
 import type { SimulationSnapshot } from "../game/types";
+import type { BlockingError, CompleteRunResponse, RunOutcome } from "../../../shared/contracts";
 
 export type HudBanner = {
   text: string;
@@ -47,6 +48,15 @@ function bannerFor(snapshot: SimulationSnapshot): HudBanner {
   return { text: "Stay quiet", tone: "neutral" };
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 export class Hud {
   private readonly root: HTMLElement;
 
@@ -90,5 +100,83 @@ export class Hud {
       </section>
     `;
     this.root.querySelector("button")?.addEventListener("click", onStart);
+  }
+
+  showBlockingMenu(message: string, onRetry: () => void): void {
+    this.root.innerHTML = `
+      <section class="menu-card">
+        <p class="hud__eyebrow">Service Required</p>
+        <h1>Connection Blocked</h1>
+        <p>${escapeHtml(message)}</p>
+        <button class="primary-action" type="button">Retry</button>
+      </section>
+    `;
+    this.root.querySelector("button")?.addEventListener("click", onRetry);
+  }
+
+  showLoading(message: string): void {
+    this.root.innerHTML = `
+      <section class="menu-card">
+        <p class="hud__eyebrow">Please Wait</p>
+        <h1>${escapeHtml(message)}</h1>
+        <p>The local service is preparing the adaptive run loop.</p>
+      </section>
+    `;
+  }
+
+  showReportLoading(outcome: RunOutcome): void {
+    this.root.innerHTML = `
+      <section class="menu-card report-card">
+        <p class="hud__eyebrow">Run ${outcome === "escape" ? "Escaped" : "Captured"}</p>
+        <h1>Generating Intelligence Report</h1>
+        <p>Submitting run events to SQLite and waiting for Codex to select a validated security response.</p>
+      </section>
+    `;
+  }
+
+  showReport(response: CompleteRunResponse, onBeginNextRun: () => void): void {
+    const habit = response.report.summary.mostUsedCorridor
+      ? `Most-used corridor: ${response.report.summary.mostUsedCorridor}`
+      : response.report.summary.favoriteHidingSpot
+        ? `Favorite hiding spot: ${response.report.summary.favoriteHidingSpot}`
+        : "No dominant habit detected yet";
+    const trend = `${response.report.summary.successfulEscapes} escape(s), ${response.report.summary.detections} detection event(s), sprint ratio ${Math.round(response.report.summary.sprintRatio * 100)}%`;
+    this.root.innerHTML = `
+      <section class="menu-card report-card">
+        <p class="hud__eyebrow">Intelligence Report</p>
+        <h1>${response.outcome === "escape" ? "Escape Logged" : "Capture Logged"}</h1>
+        <p>${escapeHtml(response.report.rationale)}</p>
+        <div class="report-card__section">
+          <strong>Learned habit</strong>
+          <span>${escapeHtml(habit)}</span>
+        </div>
+        <div class="report-card__section">
+          <strong>Security adaptation</strong>
+          <span>${escapeHtml(response.report.adaptation.action)} (${escapeHtml(response.report.adaptation.target)}) level ${response.report.adaptation.level}</span>
+        </div>
+        <div class="report-card__section">
+          <strong>Recent trend</strong>
+          <span>${escapeHtml(trend)}</span>
+        </div>
+        <button class="primary-action" type="button">Begin Next Run</button>
+      </section>
+    `;
+    this.root.querySelector("button")?.addEventListener("click", onBeginNextRun);
+  }
+
+  showReportError(error: BlockingError["error"], onRetry: () => void): void {
+    this.root.innerHTML = `
+      <section class="menu-card report-card">
+        <p class="hud__eyebrow">Report Blocked</p>
+        <h1>Retry Required</h1>
+        <p>${escapeHtml(error.message)}</p>
+        <div class="report-card__section">
+          <strong>Error code</strong>
+          <span>${escapeHtml(error.code)}</span>
+        </div>
+        <button class="primary-action" type="button">Retry</button>
+      </section>
+    `;
+    this.root.querySelector("button")?.addEventListener("click", onRetry);
   }
 }

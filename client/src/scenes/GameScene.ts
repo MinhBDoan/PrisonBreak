@@ -1,8 +1,10 @@
 import Phaser from "phaser";
+import { createIdempotencyKey } from "../api/GameApiClient";
 import { GameSimulation } from "../game/GameSimulation";
 import type { SimulationInput } from "../game/types";
 import { GameRenderer } from "../render/GameRenderer";
 import { Hud } from "../ui/Hud";
+import type { StartRunResponse } from "../../../shared/contracts";
 
 type KeySet = {
   up: Phaser.Input.Keyboard.Key;
@@ -20,20 +22,25 @@ export class GameScene extends Phaser.Scene {
   private keys!: KeySet;
   private lastEventCount = 0;
   private completionShown = false;
+  private runData: StartRunResponse = {
+    runId: 0,
+    config: { adaptations: [] },
+  };
 
   constructor() {
     super("game");
   }
 
-  create(): void {
+  create(data: StartRunResponse): void {
     const keyboard = this.input.keyboard;
     const hudRoot = document.getElementById("hud");
     if (!keyboard || !hudRoot) {
       throw new Error("Keyboard or HUD root unavailable");
     }
 
+    this.runData = data;
     this.cameras.main.setBackgroundColor("#081018");
-    this.simulation = new GameSimulation();
+    this.simulation = new GameSimulation({ nextRunConfig: data.config });
     this.viewRenderer = new GameRenderer();
     this.hud = new Hud(hudRoot);
     this.keys = {
@@ -70,7 +77,16 @@ export class GameScene extends Phaser.Scene {
 
     if (snapshot.completed && !this.completionShown) {
       this.completionShown = true;
-      this.time.delayedCall(1600, () => this.scene.start("menu"));
+      const completed = snapshot.completed;
+      this.time.delayedCall(900, () =>
+        this.scene.start("report", {
+          runId: this.runData.runId,
+          outcome: completed.outcome,
+          durationMs: completed.durationMs,
+          events: this.simulation.getEvents(),
+          idempotencyKey: createIdempotencyKey(),
+        }),
+      );
     }
   }
 

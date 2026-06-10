@@ -163,3 +163,25 @@ body {
   font: inherit;
   font-weight: 900;
 }
+
+.report-card {
+  width: min(560px, calc(100vw - 48px));
+}
+
+.report-card__section {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(143, 176, 196, 0.18);
+  border-radius: 14px;
+  background: rgba(143, 176, 196, 0.08);
+}
+
+.report-card__section strong {
+  color: #ffd166;
+}
+
+.report-card__section span {
+  color: #d8e7ef;
+}
