@@ -20,3 +20,13 @@ export const RunEventSchema = z.object({
 });
 
 export type RunEvent = z.infer<typeof RunEventSchema>;
+
+export const RunOutcomeSchema = z.enum(["escape", "capture"]);
+export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
+
+export const ReadinessSchema = z.object({
+  database: z.boolean(),
+  codex: z.boolean(),
+  ready: z.boolean(),
+});
+export type Readiness = z.infer<typeof ReadinessSchema>;
