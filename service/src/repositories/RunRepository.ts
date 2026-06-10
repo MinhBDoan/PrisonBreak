@@ -1,9 +1,10 @@
 import type { ServiceDatabase } from "../db";
+import type { RunOutcome } from "../../../shared/contracts";
 
 export interface RunRecord {
   id: number;
   configJson: string;
-  outcome: string | null;
+  outcome: RunOutcome | null;
   durationMs: number | null;
   completionIdempotencyKey: string | null;
 }
@@ -11,9 +12,22 @@ export interface RunRecord {
 interface RunRow {
   id: number;
   config_json: string;
-  outcome: string | null;
+  outcome: RunOutcome | null;
   duration_ms: number | null;
   completion_idempotency_key: string | null;
+}
+
+interface CompletionRequestRow {
+  run_id: number;
+  outcome: RunOutcome;
+  duration_ms: number;
+}
+
+export class RunCompletionConflictError extends Error {
+  constructor(idempotencyKey: string) {
+    super(`Idempotency key ${idempotencyKey} was already used for a different completion request`);
+    this.name = "RunCompletionConflictError";
+  }
 }
 
 export class RunRepository {
@@ -28,15 +42,30 @@ export class RunRepository {
 
   completeRun(
     runId: number,
-    outcome: string,
+    outcome: RunOutcome,
     durationMs: number,
     idempotencyKey: string,
   ): RunRecord {
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      throw new RangeError("Run duration must be a finite nonnegative number");
+    }
+
     return this.database.transaction(() => {
       const existing = this.database
-        .prepare("SELECT run_id FROM completion_requests WHERE idempotency_key = ?")
-        .get(idempotencyKey) as { run_id: number } | undefined;
-      if (existing) return this.getRun(existing.run_id);
+        .prepare(
+          "SELECT run_id, outcome, duration_ms FROM completion_requests WHERE idempotency_key = ?",
+        )
+        .get(idempotencyKey) as CompletionRequestRow | undefined;
+      if (existing) {
+        if (
+          existing.run_id !== runId ||
+          existing.outcome !== outcome ||
+          existing.duration_ms !== durationMs
+        ) {
+          throw new RunCompletionConflictError(idempotencyKey);
+        }
+        return this.getRun(existing.run_id);
+      }
 
       const result = this.database
         .prepare(`
