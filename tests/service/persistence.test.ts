@@ -83,4 +83,19 @@ describe("SQLite persistence", () => {
     );
     expect(database.pragma("foreign_keys", { simple: true })).toBe(1);
   });
+
+  it("indexes run events for lookup by run and ordering by insertion id", () => {
+    const database = createDatabase(":memory:");
+    const indexRows = database.pragma("index_list('run_events')") as Array<{ name: string }>;
+    const indexes = indexRows.map((row) => row.name);
+
+    expect(indexes).toContain("idx_run_events_run_id_id");
+
+    const columnRows = database.pragma("index_info('idx_run_events_run_id_id')") as Array<{
+      name: string;
+    }>;
+    const indexedColumns = columnRows.map((row) => row.name);
+
+    expect(indexedColumns).toEqual(["run_id", "id"]);
+  });
 });

@@ -26,6 +26,7 @@ export function createDatabase(filename: string): ServiceDatabase {
       event_json TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE INDEX IF NOT EXISTS idx_run_events_run_id_id ON run_events(run_id, id);
     CREATE TABLE IF NOT EXISTS adaptations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       run_id INTEGER REFERENCES runs(id) ON DELETE SET NULL,
