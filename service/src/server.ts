@@ -5,11 +5,18 @@ import {
   createReadinessRouter,
   type ReadinessDependencies,
 } from "./routes/readiness";
+import { createRunsRouter, type RunsDependencies } from "./routes/runs";
 
-export function createApp(dependencies: ReadinessDependencies = {}): Express {
+export type AppDependencies = ReadinessDependencies & Partial<RunsDependencies>;
+
+export function createApp(dependencies: AppDependencies = {}): Express {
   const app = express();
 
+  app.use(express.json());
   app.use("/api/ready", createReadinessRouter(dependencies));
+  if (dependencies.database) {
+    app.use("/api/runs", createRunsRouter({ database: dependencies.database, codexProcessRunner: dependencies.codexProcessRunner }));
+  }
 
   return app;
 }

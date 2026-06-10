@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AdaptationDecisionSchema, AdaptationTypeSchema } from "./adaptations";
 
 export const PositionSchema = z.object({ x: z.number(), y: z.number() });
 
@@ -43,8 +44,58 @@ export const ReadinessSchema = z.object({
 });
 export type Readiness = z.infer<typeof ReadinessSchema>;
 
+export const ActiveAdaptationSchema = z.object({
+  action: AdaptationTypeSchema,
+  target: z.string().min(1),
+  level: z.number().int().positive(),
+  rationale: z.string().min(1),
+});
+export type ActiveAdaptation = z.infer<typeof ActiveAdaptationSchema>;
+
+export const NextRunConfigSchema = z.object({
+  adaptations: z.array(ActiveAdaptationSchema),
+});
+export type NextRunConfig = z.infer<typeof NextRunConfigSchema>;
+
+export const StartRunResponseSchema = z.object({
+  runId: z.number().int().positive(),
+  config: NextRunConfigSchema,
+});
+export type StartRunResponse = z.infer<typeof StartRunResponseSchema>;
+
+export const CompleteRunRequestSchema = z.object({
+  outcome: RunOutcomeSchema,
+  durationMs: z.number().int().nonnegative(),
+  idempotencyKey: z.string().min(1),
+  events: z.array(RunEventSchema),
+});
+export type CompleteRunRequest = z.infer<typeof CompleteRunRequestSchema>;
+
+export const IntelligenceReportSchema = z.object({
+  summary: BehaviorSummarySchema,
+  adaptation: ActiveAdaptationSchema,
+  rationale: z.string().min(1),
+});
+export type IntelligenceReport = z.infer<typeof IntelligenceReportSchema>;
+
+export const CompleteRunResponseSchema = z.object({
+  runId: z.number().int().positive(),
+  outcome: RunOutcomeSchema,
+  report: IntelligenceReportSchema,
+  nextRun: NextRunConfigSchema,
+});
+export type CompleteRunResponse = z.infer<typeof CompleteRunResponseSchema>;
+
+export const BlockingErrorSchema = z.object({
+  error: z.object({
+    code: z.string().min(1),
+    message: z.string().min(1),
+    retryable: z.boolean(),
+  }),
+});
+export type BlockingError = z.infer<typeof BlockingErrorSchema>;
+
 export {
-  AdaptationDecisionSchema,
   AdaptationTypeSchema,
   adaptationAllowlist,
   adaptationCaps,
