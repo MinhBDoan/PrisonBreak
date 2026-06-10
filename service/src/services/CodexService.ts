@@ -67,7 +67,10 @@ export class CodexService {
     );
 
     if (result.timedOut) {
-      throw new BlockingCodexError("Codex CLI timed out after 20 seconds.", "cli_timeout");
+      throw new BlockingCodexError(
+        `Codex CLI timed out after ${formatSeconds(this.timeoutMs)} seconds.`,
+        "cli_timeout",
+      );
     }
     if (result.exitCode !== 0) {
       const stderr = result.stderr.trim();
@@ -90,17 +93,37 @@ function buildPrompt(behaviorSummary: BehaviorSummary): string {
   ].join("\n");
 }
 
+function formatSeconds(timeoutMs: number): string {
+  return (timeoutMs / 1000).toLocaleString("en-US", {
+    maximumFractionDigits: 3,
+    useGrouping: false,
+  });
+}
+
 export const spawnProcess: ProcessRunner = (executable, args, stdin, timeoutMs) =>
   new Promise((resolve, reject) => {
     const child = spawn(executable, args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let timedOut = false;
+    let escalationTimer: NodeJS.Timeout | undefined;
+    const cleanupTasks: Promise<void>[] = [];
 
     const timer = setTimeout(() => {
-      settled = true;
-      child.kill();
-      resolve({ exitCode: null, stdout, stderr, timedOut: true });
+      timedOut = true;
+      const terminationStarted = child.kill("SIGTERM");
+      escalationTimer = setTimeout(() => {
+        if (!settled) {
+          child.kill("SIGKILL");
+          cleanupTasks.push(forceKillProcessTree(child.pid));
+        }
+      }, 250);
+
+      if (!terminationStarted) {
+        child.kill("SIGKILL");
+        cleanupTasks.push(forceKillProcessTree(child.pid));
+      }
     }, timeoutMs);
 
     child.stdout.setEncoding("utf8");
@@ -115,13 +138,35 @@ export const spawnProcess: ProcessRunner = (executable, args, stdin, timeoutMs) 
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (escalationTimer) clearTimeout(escalationTimer);
       reject(new BlockingCodexError(error.message, "spawn_error"));
     });
     child.on("close", (exitCode) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ exitCode, stdout, stderr, timedOut: false });
+      if (escalationTimer) clearTimeout(escalationTimer);
+      Promise.allSettled(cleanupTasks).then(() => {
+        resolve({ exitCode: timedOut ? null : exitCode, stdout, stderr, timedOut });
+      });
     });
     child.stdin.end(stdin);
   });
+
+function forceKillProcessTree(pid: number | undefined): Promise<void> {
+  if (process.platform !== "win32" || pid === undefined) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const taskkill = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      stdio: "ignore",
+    });
+    taskkill.on("error", () => {
+      resolve();
+    });
+    taskkill.on("close", () => {
+      resolve();
+    });
+  });
+}

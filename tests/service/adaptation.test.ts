@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import {
   adaptationAllowlist,
@@ -8,6 +9,7 @@ import { AdaptationValidator } from "../../service/src/services/AdaptationValida
 import {
   BlockingCodexError,
   CodexService,
+  spawnProcess,
   type ProcessResult,
   type ProcessRunner,
 } from "../../service/src/services/CodexService";
@@ -35,6 +37,37 @@ function decision(overrides: Partial<AdaptationDecision> = {}): AdaptationDecisi
 
 function runner(result: ProcessResult): ProcessRunner {
   return vi.fn(async () => result);
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (process.platform === "win32") {
+    const output = execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+    });
+    return output
+      .trim()
+      .split(/\r?\n/)
+      .some((line) => line.replace(/^"|"$/g, "").split('","')[1] === String(pid));
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function expectProcessExited(pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (!isProcessAlive(pid)) {
+      expect(isProcessAlive(pid)).toBe(false);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  expect(isProcessAlive(pid)).toBe(false);
 }
 
 describe("adaptation shared contract", () => {
@@ -152,4 +185,59 @@ describe("CodexService", () => {
       }).selectAdaptation(behaviorSummary),
     ).rejects.toThrow(/bad auth/i);
   });
+
+  it("uses the configured timeout in timeout error messages", async () => {
+    await expect(
+      new CodexService({
+        executable: "codex-test",
+        timeoutMs: 1_234,
+        processRunner: runner({ exitCode: null, stdout: "", stderr: "", timedOut: true }),
+      }).selectAdaptation(behaviorSummary),
+    ).rejects.toThrow("Codex CLI timed out after 1.234 seconds.");
+  });
+});
+
+describe("spawnProcess", () => {
+  it("waits for the child process to close after timeout termination", async () => {
+    const startedAt = Date.now();
+    const result = await spawnProcess(
+      process.execPath,
+      [
+        "-e",
+        [
+          "const { spawn } = require('node:child_process');",
+          `spawn(process.execPath, ['-e', 'setTimeout(() => {}, 300)'], { stdio: ['ignore', 'inherit', 'inherit'] });`,
+          "setInterval(() => {}, 1000);",
+        ].join(""),
+      ],
+      "",
+      25,
+    );
+
+    expect(result.timedOut).toBe(true);
+    if (process.platform !== "win32") {
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(250);
+    }
+  });
+
+  it("escalates timeout cleanup when the child ignores termination", async () => {
+    const result = await spawnProcess(
+      process.execPath,
+      [
+        "-e",
+        [
+          "process.stdout.write(String(process.pid) + '\\n');",
+          "process.on('SIGTERM', () => {});",
+          "setInterval(() => {}, 1000);",
+        ].join(""),
+      ],
+      "",
+      25,
+    );
+
+    expect(result.timedOut).toBe(true);
+    if (process.platform !== "win32") {
+      await expectProcessExited(Number(result.stdout.trim()));
+    }
+  }, 10_000);
 });
