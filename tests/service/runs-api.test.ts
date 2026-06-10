@@ -187,6 +187,109 @@ describe("run lifecycle API", () => {
     expect(nextRun.body.config.adaptations).toHaveLength(1);
   });
 
+  it("rejects an in-flight duplicate idempotency key when the event buffer changes", async () => {
+    const releaseCodex = deferred<Awaited<ReturnType<ProcessRunner>>>();
+    const codexStarted = deferred();
+    const processRunner = vi.fn(async () => {
+      codexStarted.resolve();
+      return releaseCodex.promise;
+    });
+    const app = createTestApp(processRunner);
+    const start = await request(app).post("/api/runs").send({});
+    const firstBody = {
+      outcome: "capture",
+      durationMs: 20_000,
+      idempotencyKey: "changed-events-in-flight",
+      events: [
+        positionedEvent("sprint", { corridorId: "west_corridor" }),
+        positionedEvent("sprint", { corridorId: "west_corridor" }),
+      ],
+    };
+    const changedBody = {
+      ...firstBody,
+      events: [
+        positionedEvent("sprint", { corridorId: "east_corridor" }),
+        positionedEvent("sprint", { corridorId: "east_corridor" }),
+      ],
+    };
+
+    const firstCompletion = request(app)
+      .post(`/api/runs/${start.body.runId}/complete`)
+      .send(firstBody)
+      .then((response) => response);
+    await codexStarted.promise;
+    const conflict = await request(app)
+      .post(`/api/runs/${start.body.runId}/complete`)
+      .send(changedBody);
+    releaseCodex.resolve({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        action: "increase_noise_sensitivity",
+        target: "global",
+        rationale: "The player sprinted frequently.",
+      }),
+      stderr: "",
+      timedOut: false,
+    });
+    const first = await firstCompletion;
+
+    expect(first.status).toBe(200);
+    expect(conflict.status).toBe(409);
+    expect(conflict.body).toMatchObject({
+      error: {
+        code: "idempotency_conflict",
+        retryable: false,
+      },
+    });
+    expect(processRunner).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an after-completion duplicate idempotency key when the event buffer changes", async () => {
+    const processRunner = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        action: "increase_noise_sensitivity",
+        target: "global",
+        rationale: "The player sprinted frequently.",
+      }),
+      stderr: "",
+      timedOut: false,
+    }));
+    const app = createTestApp(processRunner);
+    const start = await request(app).post("/api/runs").send({});
+    const firstBody = {
+      outcome: "capture",
+      durationMs: 20_000,
+      idempotencyKey: "changed-events-after-completion",
+      events: [
+        positionedEvent("sprint", { corridorId: "west_corridor" }),
+        positionedEvent("sprint", { corridorId: "west_corridor" }),
+      ],
+    };
+    const changedBody = {
+      ...firstBody,
+      events: [
+        positionedEvent("sprint", { corridorId: "east_corridor" }),
+        positionedEvent("sprint", { corridorId: "east_corridor" }),
+      ],
+    };
+
+    const first = await request(app).post(`/api/runs/${start.body.runId}/complete`).send(firstBody);
+    const conflict = await request(app)
+      .post(`/api/runs/${start.body.runId}/complete`)
+      .send(changedBody);
+
+    expect(first.status).toBe(200);
+    expect(conflict.status).toBe(409);
+    expect(conflict.body).toMatchObject({
+      error: {
+        code: "idempotency_conflict",
+        retryable: false,
+      },
+    });
+    expect(processRunner).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps duplicate completion responses stable after later adaptations", async () => {
     const decisions = [
       {

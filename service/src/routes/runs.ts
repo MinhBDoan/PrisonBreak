@@ -1,10 +1,12 @@
 import { Router, type Response } from "express";
+import { createHash } from "node:crypto";
 import {
   BlockingErrorSchema,
   CompleteRunRequestSchema,
   CompleteRunResponseSchema,
   StartRunResponseSchema,
   type CompleteRunResponse,
+  type CompleteRunRequest,
   type IntelligenceReport,
   type NextRunConfig,
   type RunOutcome,
@@ -51,9 +53,10 @@ export function createRunsRouter(dependencies: RunsDependencies): Router {
     }
 
     const requestKey = parsed.data.idempotencyKey;
+    const requestHash = completionRequestHash(runId, parsed.data);
     const existingInFlight = inFlightCompletions.get(requestKey);
     if (existingInFlight) {
-      if (!sameCompletionRequest(existingInFlight, runId, parsed.data)) {
+      if (!sameCompletionRequest(existingInFlight, requestHash)) {
         response.status(409).json({
           error: {
             code: "idempotency_conflict",
@@ -83,11 +86,13 @@ export function createRunsRouter(dependencies: RunsDependencies): Router {
       adaptationValidator,
       runId,
       request: parsed.data,
+      requestHash,
     });
     inFlightCompletions.set(requestKey, {
       runId,
       outcome: parsed.data.outcome,
       durationMs: parsed.data.durationMs,
+      requestHash,
       promise: completionPromise,
     });
 
@@ -107,6 +112,7 @@ interface InFlightCompletion {
   runId: number;
   outcome: RunOutcome;
   durationMs: number;
+  requestHash: string;
   promise: Promise<CompleteRunResponse>;
 }
 
@@ -121,6 +127,7 @@ async function finalizeCompletion({
   adaptationValidator,
   runId,
   request,
+  requestHash,
 }: {
   database: ServiceDatabase;
   runs: RunRepository;
@@ -137,12 +144,13 @@ async function finalizeCompletion({
     idempotencyKey: string;
     events: Parameters<EventRepository["insertRunEvents"]>[1];
   };
+  requestHash: string;
 }): Promise<CompleteRunResponse> {
   const existingRun = runs.getRun(runId);
   const completedRun =
     existingRun.outcome === null
-      ? database.transaction(() => completeFreshRun(runs, events, runId, request))()
-      : runs.completeRun(runId, request.outcome, request.durationMs, request.idempotencyKey);
+      ? database.transaction(() => completeFreshRun(runs, events, runId, request, requestHash))()
+      : runs.completeRun(runId, request.outcome, request.durationMs, request.idempotencyKey, requestHash);
 
   const existingCompletion = reports.findLatestCompletion(runId);
   if (existingCompletion) return existingCompletion;
@@ -200,24 +208,36 @@ function completeFreshRun(
     idempotencyKey: string;
     events: Parameters<EventRepository["insertRunEvents"]>[1];
   },
+  requestHash: string,
 ) {
   events.insertRunEvents(runId, request.events);
-  return runs.completeRun(runId, request.outcome, request.durationMs, request.idempotencyKey);
+  return runs.completeRun(runId, request.outcome, request.durationMs, request.idempotencyKey, requestHash);
 }
 
-function sameCompletionRequest(
-  inFlight: InFlightCompletion,
-  runId: number,
-  request: {
-    outcome: RunOutcome;
-    durationMs: number;
-  },
-): boolean {
-  return (
-    inFlight.runId === runId &&
-    inFlight.outcome === request.outcome &&
-    inFlight.durationMs === request.durationMs
-  );
+function sameCompletionRequest(inFlight: InFlightCompletion, requestHash: string): boolean {
+  return inFlight.requestHash === requestHash;
+}
+
+function completionRequestHash(runId: number, request: CompleteRunRequest): string {
+  return createHash("sha256")
+    .update(stableJson({ runId, outcome: request.outcome, durationMs: request.durationMs, events: request.events }))
+    .digest("hex");
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(canonicalize(value));
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nestedValue]) => [key, canonicalize(nestedValue)]),
+    );
+  }
+  return value;
 }
 
 function writeCompletionError(response: Response, error: unknown): void {

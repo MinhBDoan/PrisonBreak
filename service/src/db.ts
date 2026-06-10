@@ -46,8 +46,15 @@ export function createDatabase(filename: string): ServiceDatabase {
       run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
       outcome TEXT NOT NULL,
       duration_ms INTEGER NOT NULL,
+      request_hash TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  const completionRequestColumns = database
+    .prepare("PRAGMA table_info(completion_requests)")
+    .all() as Array<{ name: string }>;
+  if (!completionRequestColumns.some((column) => column.name === "request_hash")) {
+    database.exec("ALTER TABLE completion_requests ADD COLUMN request_hash TEXT NOT NULL DEFAULT ''");
+  }
   return database;
 }

@@ -21,6 +21,7 @@ interface CompletionRequestRow {
   run_id: number;
   outcome: RunOutcome;
   duration_ms: number;
+  request_hash: string;
 }
 
 export class RunCompletionConflictError extends Error {
@@ -45,6 +46,7 @@ export class RunRepository {
     outcome: RunOutcome,
     durationMs: number,
     idempotencyKey: string,
+    requestHash = "",
   ): RunRecord {
     if (!Number.isFinite(durationMs) || durationMs < 0) {
       throw new RangeError("Run duration must be a finite nonnegative number");
@@ -53,14 +55,15 @@ export class RunRepository {
     return this.database.transaction(() => {
       const existing = this.database
         .prepare(
-          "SELECT run_id, outcome, duration_ms FROM completion_requests WHERE idempotency_key = ?",
+          "SELECT run_id, outcome, duration_ms, request_hash FROM completion_requests WHERE idempotency_key = ?",
         )
         .get(idempotencyKey) as CompletionRequestRow | undefined;
       if (existing) {
         if (
           existing.run_id !== runId ||
           existing.outcome !== outcome ||
-          existing.duration_ms !== durationMs
+          existing.duration_ms !== durationMs ||
+          existing.request_hash !== requestHash
         ) {
           throw new RunCompletionConflictError(idempotencyKey);
         }
@@ -79,10 +82,10 @@ export class RunRepository {
 
       this.database
         .prepare(`
-          INSERT INTO completion_requests (idempotency_key, run_id, outcome, duration_ms)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO completion_requests (idempotency_key, run_id, outcome, duration_ms, request_hash)
+          VALUES (?, ?, ?, ?, ?)
         `)
-        .run(idempotencyKey, runId, outcome, durationMs);
+        .run(idempotencyKey, runId, outcome, durationMs, requestHash);
       return this.getRun(runId);
     })();
   }
