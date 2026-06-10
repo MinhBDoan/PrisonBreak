@@ -26,7 +26,7 @@ DATABASE_PATH=./data/prison-break.sqlite
 CODEX_EXECUTABLE=codex
 ```
 
-`HOST` defaults to `127.0.0.1` so the Codex/SQLite service is not exposed to the local network by accident. `PORT` defaults to `3001`. `DATABASE_PATH` defaults to `prison-break.sqlite` in the working directory. `CODEX_EXECUTABLE` defaults to `codex`.
+`HOST` defaults to `127.0.0.1` so the Codex/SQLite service is not exposed to the local network by accident. `PORT` defaults to `3001`. `DATABASE_PATH` defaults to `prison-break.sqlite` in the working directory. `CODEX_EXECUTABLE` defaults to `codex`. Readiness checks run the configured Codex executable with `--version` using a short timeout, so the menu stays blocked until the CLI is installed and runnable.
 
 Create the database directory before using a nested `DATABASE_PATH`:
 
