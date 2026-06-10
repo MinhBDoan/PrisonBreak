@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createCodexHealthCheck,
+  findBundledCodexExecutable,
   resolveCodexExecutable,
 } from "../../service/src/services/CodexHealth";
 import { createProductionDependencies } from "../../service/src/server";
@@ -39,7 +40,31 @@ describe("Codex health check", () => {
 
   it("uses CODEX_EXECUTABLE with a codex default", () => {
     expect(resolveCodexExecutable({ CODEX_EXECUTABLE: "codex-custom" })).toBe("codex-custom");
-    expect(resolveCodexExecutable({})).toBe("codex");
+    expect(resolveCodexExecutable({}, () => null)).toBe("codex");
+  });
+
+  it("prefers the runnable user-local Codex executable when available", () => {
+    expect(
+      findBundledCodexExecutable(
+        {
+          LOCALAPPDATA: "C:\\Users\\ronny\\AppData\\Local",
+        },
+        {
+          existsSync: (path) => path.endsWith("\\OpenAI\\Codex\\bin"),
+          readdirSync: (path) =>
+            path.endsWith("\\OpenAI\\Codex\\bin")
+              ? [
+                  { name: "older", isDirectory: () => true },
+                  { name: "newer", isDirectory: () => true },
+                ]
+              : [],
+          statSync: (path) => ({
+            mtimeMs: path.includes("newer") ? 20 : 10,
+            isFile: () => path.endsWith("codex.exe"),
+          }),
+        },
+      ),
+    ).toBe("C:\\Users\\ronny\\AppData\\Local\\OpenAI\\Codex\\bin\\newer\\codex.exe");
   });
 
   it("wires production dependencies to a real Codex health check", async () => {

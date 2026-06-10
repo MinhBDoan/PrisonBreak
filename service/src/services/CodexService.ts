@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { readFile, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   adaptationAllowlist,
   type AdaptationDecision,
@@ -61,9 +64,23 @@ export class CodexService {
     behaviorSummary: BehaviorSummary,
     activeAdaptations: AdaptationDecision[] = [],
   ): Promise<AdaptationDecision> {
+    const outputFile = path.join(
+      tmpdir(),
+      `prison-break-codex-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
     const result = await this.processRunner(
       this.executable,
-      [],
+      [
+        "exec",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+        "--color",
+        "never",
+        "--output-last-message",
+        outputFile,
+        "-",
+      ],
       buildPrompt(behaviorSummary),
       this.timeoutMs,
     );
@@ -88,7 +105,18 @@ export class CodexService {
       );
     }
 
-    return this.validator.parseAndValidate(result.stdout, behaviorSummary, activeAdaptations);
+    const rawDecision = await readOutputLastMessage(outputFile, result.stdout);
+    return this.validator.parseAndValidate(rawDecision, behaviorSummary, activeAdaptations);
+  }
+}
+
+async function readOutputLastMessage(outputFile: string, fallbackStdout: string): Promise<string> {
+  try {
+    return await readFile(outputFile, "utf8");
+  } catch {
+    return fallbackStdout;
+  } finally {
+    await unlink(outputFile).catch(() => {});
   }
 }
 

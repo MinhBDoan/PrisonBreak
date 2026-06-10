@@ -153,13 +153,10 @@ describe("CodexService", () => {
     const service = new CodexService({ executable: "codex-test", processRunner });
 
     await expect(service.selectAdaptation(behaviorSummary)).resolves.toEqual(decision());
-    expect(processRunner).toHaveBeenCalledWith(
-      "codex-test",
-      [],
-      expect.stringContaining(JSON.stringify(behaviorSummary)),
-      20_000,
-    );
-    const prompt = vi.mocked(processRunner).mock.calls[0][2];
+    const [executable, args, prompt, timeoutMs] = vi.mocked(processRunner).mock.calls[0];
+    expect(executable).toBe("codex-test");
+    expect(args).toEqual(expect.arrayContaining(["exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-last-message", "-"]));
+    expect(timeoutMs).toBe(20_000);
     expect(prompt).toContain(JSON.stringify(adaptationAllowlist));
     expect(prompt).not.toContain("localStorage");
   });
