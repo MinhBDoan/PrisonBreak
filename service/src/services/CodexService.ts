@@ -11,6 +11,7 @@ export interface ProcessResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  outputLimitExceeded?: "stdout" | "stderr";
 }
 
 export type ProcessRunner = (
@@ -28,6 +29,7 @@ export class BlockingCodexError extends Error {
       | "invalid_decision"
       | "cli_timeout"
       | "cli_exit"
+      | "output_limit"
       | "spawn_error",
   ) {
     super(message);
@@ -72,6 +74,12 @@ export class CodexService {
         "cli_timeout",
       );
     }
+    if (result.outputLimitExceeded) {
+      throw new BlockingCodexError(
+        `Codex CLI exceeded ${result.outputLimitExceeded} output limit.`,
+        "output_limit",
+      );
+    }
     if (result.exitCode !== 0) {
       const stderr = result.stderr.trim();
       throw new BlockingCodexError(
@@ -100,6 +108,8 @@ function formatSeconds(timeoutMs: number): string {
   });
 }
 
+export const CODEX_PROCESS_OUTPUT_LIMIT_BYTES = 64 * 1024;
+
 export const spawnProcess: ProcessRunner = (executable, args, stdin, timeoutMs) =>
   new Promise((resolve, reject) => {
     const child = spawn(executable, args, { stdio: ["pipe", "pipe", "pipe"] });
@@ -107,11 +117,11 @@ export const spawnProcess: ProcessRunner = (executable, args, stdin, timeoutMs) 
     let stderr = "";
     let settled = false;
     let timedOut = false;
+    let outputLimitExceeded: "stdout" | "stderr" | undefined;
     let escalationTimer: NodeJS.Timeout | undefined;
     const cleanupTasks: Promise<void>[] = [];
 
-    const timer = setTimeout(() => {
-      timedOut = true;
+    const terminateChild = () => {
       const terminationStarted = child.kill("SIGTERM");
       escalationTimer = setTimeout(() => {
         if (!settled) {
@@ -124,15 +134,40 @@ export const spawnProcess: ProcessRunner = (executable, args, stdin, timeoutMs) 
         child.kill("SIGKILL");
         cleanupTasks.push(forceKillProcessTree(child.pid));
       }
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      terminateChild();
     }, timeoutMs);
+
+    const captureChunk = (
+      streamName: "stdout" | "stderr",
+      current: string,
+      chunk: string,
+    ): string => {
+      if (outputLimitExceeded) {
+        return current;
+      }
+
+      const availableBytes = CODEX_PROCESS_OUTPUT_LIMIT_BYTES - Buffer.byteLength(current, "utf8");
+      if (Buffer.byteLength(chunk, "utf8") <= availableBytes) {
+        return current + chunk;
+      }
+
+      outputLimitExceeded = streamName;
+      clearTimeout(timer);
+      terminateChild();
+      return current + takeUtf8Prefix(chunk, Math.max(availableBytes, 0));
+    };
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
-      stdout += chunk;
+      stdout = captureChunk("stdout", stdout, chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk;
+      stderr = captureChunk("stderr", stderr, chunk);
     });
     child.on("error", (error) => {
       if (settled) return;
@@ -147,7 +182,13 @@ export const spawnProcess: ProcessRunner = (executable, args, stdin, timeoutMs) 
       clearTimeout(timer);
       if (escalationTimer) clearTimeout(escalationTimer);
       Promise.allSettled(cleanupTasks).then(() => {
-        resolve({ exitCode: timedOut ? null : exitCode, stdout, stderr, timedOut });
+        resolve({
+          exitCode: timedOut || outputLimitExceeded ? null : exitCode,
+          stdout,
+          stderr,
+          timedOut,
+          outputLimitExceeded,
+        });
       });
     });
     child.stdin.end(stdin);
@@ -169,4 +210,18 @@ function forceKillProcessTree(pid: number | undefined): Promise<void> {
       resolve();
     });
   });
+}
+
+function takeUtf8Prefix(value: string, maxBytes: number): string {
+  let bytes = 0;
+  let result = "";
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (bytes + characterBytes > maxBytes) {
+      break;
+    }
+    bytes += characterBytes;
+    result += character;
+  }
+  return result;
 }

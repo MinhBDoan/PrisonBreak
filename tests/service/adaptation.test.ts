@@ -9,6 +9,7 @@ import { AdaptationValidator } from "../../service/src/services/AdaptationValida
 import {
   BlockingCodexError,
   CodexService,
+  CODEX_PROCESS_OUTPUT_LIMIT_BYTES,
   spawnProcess,
   type ProcessResult,
   type ProcessRunner,
@@ -186,6 +187,24 @@ describe("CodexService", () => {
     ).rejects.toThrow(/bad auth/i);
   });
 
+  it("blocks process output limit breaches without echoing captured stderr", async () => {
+    await expect(
+      new CodexService({
+        executable: "codex-test",
+        processRunner: runner({
+          exitCode: null,
+          stdout: "",
+          stderr: "x".repeat(CODEX_PROCESS_OUTPUT_LIMIT_BYTES),
+          timedOut: false,
+          outputLimitExceeded: "stderr",
+        }),
+      }).selectAdaptation(behaviorSummary),
+    ).rejects.toMatchObject({
+      code: "output_limit",
+      message: "Codex CLI exceeded stderr output limit.",
+    });
+  });
+
   it("uses the configured timeout in timeout error messages", async () => {
     await expect(
       new CodexService({
@@ -198,6 +217,48 @@ describe("CodexService", () => {
 });
 
 describe("spawnProcess", () => {
+  it("terminates the child process when stdout exceeds the capture limit", async () => {
+    const result = await spawnProcess(
+      process.execPath,
+      [
+        "-e",
+        [
+          "process.stdout.write(String(process.pid) + '\\n');",
+          `process.stdout.write('x'.repeat(${CODEX_PROCESS_OUTPUT_LIMIT_BYTES + 1}));`,
+          "setInterval(() => {}, 1000);",
+        ].join(""),
+      ],
+      "",
+      5_000,
+    );
+
+    expect(result.outputLimitExceeded).toBe("stdout");
+    expect(result.timedOut).toBe(false);
+    expect(result.stdout.length).toBeLessThanOrEqual(CODEX_PROCESS_OUTPUT_LIMIT_BYTES);
+    await expectProcessExited(Number(result.stdout.split(/\r?\n/)[0]));
+  }, 10_000);
+
+  it("terminates the child process when stderr exceeds the capture limit", async () => {
+    const result = await spawnProcess(
+      process.execPath,
+      [
+        "-e",
+        [
+          "process.stdout.write(String(process.pid) + '\\n');",
+          `process.stderr.write('x'.repeat(${CODEX_PROCESS_OUTPUT_LIMIT_BYTES + 1}));`,
+          "setInterval(() => {}, 1000);",
+        ].join(""),
+      ],
+      "",
+      5_000,
+    );
+
+    expect(result.outputLimitExceeded).toBe("stderr");
+    expect(result.timedOut).toBe(false);
+    expect(result.stderr.length).toBeLessThanOrEqual(CODEX_PROCESS_OUTPUT_LIMIT_BYTES);
+    await expectProcessExited(Number(result.stdout.trim()));
+  }, 10_000);
+
   it("waits for the child process to close after timeout termination", async () => {
     const startedAt = Date.now();
     const result = await spawnProcess(
