@@ -42,3 +42,11 @@ export const ReadinessSchema = z.object({
   ready: z.boolean(),
 });
 export type Readiness = z.infer<typeof ReadinessSchema>;
+
+export {
+  AdaptationDecisionSchema,
+  AdaptationTypeSchema,
+  adaptationAllowlist,
+  adaptationCaps,
+} from "./adaptations";
+export type { AdaptationDecision, AdaptationType } from "./adaptations";
