@@ -56,6 +56,9 @@ export class AdaptationValidator {
     if (decision.action === "activate_reserve_guard" && decision.target !== "exit") {
       throw invalid("Reserve guard target must be exit.");
     }
+    if (decision.action === "maintain_security_posture" && decision.target !== "global") {
+      throw invalid("Maintain security posture target must be global.");
+    }
   }
 
   private verifyPrerequisites(

@@ -44,7 +44,11 @@ export class AnalyticsService {
             hidingSpotScores[hidingSpotId] = (hidingSpotScores[hidingSpotId] ?? 0) + weight;
           }
         }
-        if (event.type === "detection") detections += weight;
+        if (event.type === "detection") {
+          detections += weight;
+          const corridorId = payloadId(event, "corridorId");
+          if (corridorId) corridorScores[corridorId] = (corridorScores[corridorId] ?? 0) + weight;
+        }
       }
     });
 

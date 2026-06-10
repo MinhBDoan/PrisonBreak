@@ -145,6 +145,28 @@ describe("GameSimulation", () => {
     expect(analytics.summarize(1).mostUsedCorridor).toBe("east_corridor");
   });
 
+  it("emits detection corridor ids that feed analytics when the player is captured without moving", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
+
+    stepMany(simulation, 150);
+
+    const detection = simulation.getEvents().find((event) => event.type === "detection");
+    expect(detection?.payload.corridorId).toBe("central_corridor");
+
+    const database = createDatabase(":memory:");
+    const runs = new RunRepository(database);
+    const events = new EventRepository(database);
+    const run = runs.startRun("{}");
+    events.insertRunEvents(run.id, simulation.getEvents());
+    runs.completeRun(run.id, "capture", 1_000, "complete-detection-route");
+    const analytics = new AnalyticsService(events);
+
+    expect(analytics.summarize(1).mostUsedCorridor).toBe("central_corridor");
+  });
+
   it("makes noise-sensitive guards react to adapted sprinting from farther away", () => {
     const guardOverride = {
       id: "guard-1",

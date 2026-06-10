@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   adaptationAllowlist,
+  adaptationCaps,
   type AdaptationDecision,
 } from "../../../shared/adaptations";
 import type { BehaviorSummary } from "../../../shared/contracts";
@@ -81,7 +82,7 @@ export class CodexService {
         outputFile,
         "-",
       ],
-      buildPrompt(behaviorSummary),
+      buildPrompt(behaviorSummary, activeAdaptations),
       this.timeoutMs,
     );
 
@@ -120,13 +121,72 @@ async function readOutputLastMessage(outputFile: string, fallbackStdout: string)
   }
 }
 
-function buildPrompt(behaviorSummary: BehaviorSummary): string {
+function buildPrompt(
+  behaviorSummary: BehaviorSummary,
+  activeAdaptations: AdaptationDecision[],
+): string {
+  const eligibleAdaptations = buildEligibleAdaptations(behaviorSummary, activeAdaptations);
   return [
     "Choose exactly one prison guard adaptation.",
     "Return only JSON with shape {\"action\":\"...\",\"target\":\"...\",\"rationale\":\"...\"}.",
+    "Choose only from Eligible adaptations. Do not invent another target or action.",
     `Behavior summary: ${JSON.stringify(behaviorSummary)}`,
     `Allowlist: ${JSON.stringify(adaptationAllowlist)}`,
+    `Active adaptations: ${JSON.stringify(activeAdaptations)}`,
+    `Eligible adaptations: ${JSON.stringify(eligibleAdaptations)}`,
   ].join("\n");
+}
+
+function buildEligibleAdaptations(
+  behaviorSummary: BehaviorSummary,
+  activeAdaptations: AdaptationDecision[],
+): AdaptationDecision[] {
+  const candidates: AdaptationDecision[] = [];
+  if (behaviorSummary.mostUsedCorridor) {
+    candidates.push({
+      action: "increase_corridor_patrol",
+      target: behaviorSummary.mostUsedCorridor,
+      rationale: "The player was detected in or repeatedly used this corridor.",
+    });
+  }
+  if (behaviorSummary.favoriteHidingSpot) {
+    candidates.push({
+      action: "inspect_hiding_spot",
+      target: behaviorSummary.favoriteHidingSpot,
+      rationale: "The player repeatedly used this hiding spot.",
+    });
+  }
+  if (behaviorSummary.frequentSprinting) {
+    candidates.push({
+      action: "increase_noise_sensitivity",
+      target: "global",
+      rationale: "The player sprinted frequently.",
+    });
+  }
+  if (behaviorSummary.successfulEscapes >= 2) {
+    candidates.push({
+      action: "activate_reserve_guard",
+      target: "exit",
+      rationale: "The player escaped successfully multiple times.",
+    });
+  }
+
+  const eligibleSpecificAdaptations = candidates.filter(
+    (candidate) =>
+      activeAdaptations.filter((adaptation) => adaptation.action === candidate.action).length <
+      adaptationCaps[candidate.action],
+  );
+  if (eligibleSpecificAdaptations.length > 0) {
+    return eligibleSpecificAdaptations;
+  }
+
+  return [
+    {
+      action: "maintain_security_posture",
+      target: "global",
+      rationale: "Every specific eligible response is already capped.",
+    },
+  ];
 }
 
 function formatSeconds(timeoutMs: number): string {

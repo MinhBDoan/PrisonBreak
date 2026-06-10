@@ -140,7 +140,7 @@ export class Hud {
       : response.report.summary.favoriteHidingSpot
         ? `Favorite hiding spot: ${response.report.summary.favoriteHidingSpot}`
         : "No dominant habit detected yet";
-    const trend = `${response.report.summary.successfulEscapes} escape(s), ${response.report.summary.detections} detection event(s), sprint ratio ${Math.round(response.report.summary.sprintRatio * 100)}%`;
+    const trend = `${Math.round(response.report.summary.successfulEscapes)} escape(s), ${Math.round(response.report.summary.detections)} detection event(s), sprint ratio ${Math.round(response.report.summary.sprintRatio * 100)}%`;
     this.root.innerHTML = `
       <section class="menu-card report-card">
         <p class="hud__eyebrow">Intelligence Report</p>

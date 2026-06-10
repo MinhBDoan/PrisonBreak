@@ -5,6 +5,7 @@ export const adaptationCaps = {
   inspect_hiding_spot: 2,
   increase_noise_sensitivity: 2,
   activate_reserve_guard: 1,
+  maintain_security_posture: 999,
 } as const;
 
 export type AdaptationType = keyof typeof adaptationCaps;
@@ -14,6 +15,7 @@ export const AdaptationTypeSchema = z.enum([
   "inspect_hiding_spot",
   "increase_noise_sensitivity",
   "activate_reserve_guard",
+  "maintain_security_posture",
 ]);
 
 export const AdaptationDecisionSchema = z.object({
@@ -48,5 +50,10 @@ export const adaptationAllowlist: ReadonlyArray<{
     action: "activate_reserve_guard",
     validTargets: "exit",
     description: "Activate the reserve guard near the exit after repeated successful escapes.",
+  },
+  {
+    action: "maintain_security_posture",
+    validTargets: "global",
+    description: "Keep the current adaptation set when every specific eligible response is capped.",
   },
 ];

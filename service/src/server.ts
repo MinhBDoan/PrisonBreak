@@ -17,6 +17,7 @@ export type AppDependencies = ReadinessDependencies & Partial<RunsDependencies>;
 export function createApp(dependencies: AppDependencies = {}): Express {
   const app = express();
 
+  app.use(localBrowserCors);
   app.use(express.json());
   app.use("/api/ready", createReadinessRouter(dependencies));
   if (dependencies.database) {
@@ -24,6 +25,27 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   }
 
   return app;
+}
+
+function localBrowserCors(
+  request: express.Request,
+  response: express.Response,
+  next: express.NextFunction,
+): void {
+  const origin = request.header("origin");
+  if (origin === "http://127.0.0.1:5173" || origin === "http://localhost:5173") {
+    response.header("Access-Control-Allow-Origin", origin);
+    response.header("Vary", "Origin");
+    response.header("Access-Control-Allow-Headers", "Content-Type");
+    response.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  }
+
+  if (request.method === "OPTIONS") {
+    response.status(204).end();
+    return;
+  }
+
+  next();
 }
 
 export function resolveHost(host: string | undefined): string {

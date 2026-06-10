@@ -78,12 +78,14 @@ describe("adaptation shared contract", () => {
       inspect_hiding_spot: 2,
       increase_noise_sensitivity: 2,
       activate_reserve_guard: 1,
+      maintain_security_posture: 999,
     });
     expect(adaptationAllowlist.map((entry) => entry.action)).toEqual([
       "increase_corridor_patrol",
       "inspect_hiding_spot",
       "increase_noise_sensitivity",
       "activate_reserve_guard",
+      "maintain_security_posture",
     ]);
   });
 });
@@ -99,6 +101,9 @@ describe("AdaptationValidator", () => {
     expect(
       validator.validate(decision({ action: "increase_noise_sensitivity", target: "global" }), behaviorSummary, []),
     ).toEqual(decision({ action: "increase_noise_sensitivity", target: "global" }));
+    expect(
+      validator.validate(decision({ action: "maintain_security_posture", target: "global" }), behaviorSummary, []),
+    ).toEqual(decision({ action: "maintain_security_posture", target: "global" }));
   });
 
   it("rejects unknown actions and malformed JSON as typed blocking errors", () => {
@@ -143,7 +148,7 @@ describe("AdaptationValidator", () => {
 });
 
 describe("CodexService", () => {
-  it("spawns the configured executable with a prompt containing only summary and allowlist", async () => {
+  it("spawns the configured executable with a prompt containing summary, allowlist, and eligible adaptations", async () => {
     const processRunner = runner({
       exitCode: 0,
       stdout: JSON.stringify(decision()),
@@ -158,7 +163,80 @@ describe("CodexService", () => {
     expect(args).toEqual(expect.arrayContaining(["exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-last-message", "-"]));
     expect(timeoutMs).toBe(20_000);
     expect(prompt).toContain(JSON.stringify(adaptationAllowlist));
+    expect(prompt).toContain("Eligible adaptations");
+    const eligibleJson = prompt.match(/Eligible adaptations: (.+)$/m)?.[1];
+    expect(eligibleJson).toBeDefined();
+    expect(JSON.parse(eligibleJson as string)).toContainEqual(
+      expect.objectContaining({
+        action: "increase_corridor_patrol",
+        target: "east_corridor",
+      }),
+    );
     expect(prompt).not.toContain("localStorage");
+  });
+
+  it("does not list noise sensitivity as eligible without frequent sprinting", async () => {
+    const processRunner = runner({
+      exitCode: 0,
+      stdout: JSON.stringify(decision()),
+      stderr: "",
+      timedOut: false,
+    });
+    const service = new CodexService({ executable: "codex-test", processRunner });
+
+    await expect(
+      service.selectAdaptation({ ...behaviorSummary, sprintRatio: 0, frequentSprinting: false }),
+    ).resolves.toEqual(decision());
+
+    const prompt = vi.mocked(processRunner).mock.calls[0][2];
+    const eligibleJson = prompt.match(/Eligible adaptations: (.+)$/m)?.[1];
+    expect(eligibleJson).toBeDefined();
+    const eligible = JSON.parse(eligibleJson as string) as AdaptationDecision[];
+    expect(eligible.map((entry) => entry.action)).not.toContain("increase_noise_sensitivity");
+    expect(eligible).toContainEqual(
+      expect.objectContaining({
+        action: "increase_corridor_patrol",
+        target: "east_corridor",
+      }),
+    );
+  });
+
+  it("lists maintain security posture when every specific eligible adaptation is capped", async () => {
+    const maintainDecision = decision({
+      action: "maintain_security_posture",
+      target: "global",
+      rationale: "Every specific eligible response is already capped.",
+    });
+    const processRunner = runner({
+      exitCode: 0,
+      stdout: JSON.stringify(maintainDecision),
+      stderr: "",
+      timedOut: false,
+    });
+    const service = new CodexService({ executable: "codex-test", processRunner });
+
+    await expect(
+      service.selectAdaptation(
+        {
+          ...behaviorSummary,
+          favoriteHidingSpot: null,
+          hidingSpotScores: {},
+          sprintRatio: 0,
+          frequentSprinting: false,
+          successfulEscapes: 0,
+        },
+        [decision(), decision(), decision()],
+      ),
+    ).resolves.toEqual(maintainDecision);
+
+    const prompt = vi.mocked(processRunner).mock.calls[0][2];
+    const eligibleJson = prompt.match(/Eligible adaptations: (.+)$/m)?.[1];
+    expect(JSON.parse(eligibleJson as string)).toEqual([
+      expect.objectContaining({
+        action: "maintain_security_posture",
+        target: "global",
+      }),
+    ]);
   });
 
   it("blocks malformed JSON, CLI timeout, and non-zero CLI exit", async () => {

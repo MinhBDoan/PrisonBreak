@@ -326,10 +326,11 @@ export class GameSimulation {
   }
 
   private recordDetection(guardId: string, reason: string): void {
+    const corridorId = corridorAt(this.map, this.player.position);
     this.events.record(this.timeMs, {
       type: "detection",
       position: { ...this.player.position },
-      payload: { guardId, reason },
+      payload: corridorId ? { guardId, reason, corridorId } : { guardId, reason },
     });
   }
 

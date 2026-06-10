@@ -133,4 +133,18 @@ describe("AnalyticsService", () => {
 
     expect(analytics.summarize(10).corridorScores.west_corridor).toBeLessThan(before);
   });
+
+  it("uses detection corridor ids as route evidence for captured no-movement runs", () => {
+    const database = createDatabase(":memory:");
+    const runs = new RunRepository(database);
+    const events = new EventRepository(database);
+    const analytics = new AnalyticsService(events);
+
+    seedCompletedRun(runs, events, "capture", [
+      event("detection", { corridorId: "west_corridor", reason: "line_of_sight" }),
+      event("capture"),
+    ]);
+
+    expect(analytics.summarize(1).mostUsedCorridor).toBe("west_corridor");
+  });
 });
