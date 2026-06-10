@@ -4,6 +4,7 @@ import { createDatabase } from "../../service/src/db";
 import { createApp } from "../../service/src/server";
 import type { ProcessRunner } from "../../service/src/services/CodexService";
 import { CompleteRunResponseSchema, StartRunResponseSchema } from "../../shared/contracts";
+import type { ServiceDatabase } from "../../service/src/db";
 
 function positionedEvent(type: "move" | "sprint" | "hide_enter", payload: Record<string, unknown>) {
   return {
@@ -14,12 +15,20 @@ function positionedEvent(type: "move" | "sprint" | "hide_enter", payload: Record
   };
 }
 
-function createTestApp(processRunner: ProcessRunner) {
+function createTestApp(processRunner: ProcessRunner, database: ServiceDatabase = createDatabase(":memory:")) {
   return createApp({
-    database: createDatabase(":memory:"),
+    database,
     codexHealth: () => true,
     codexProcessRunner: processRunner,
   });
+}
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
 }
 
 describe("run lifecycle API", () => {
@@ -116,6 +125,68 @@ describe("run lifecycle API", () => {
     expect(processRunner).toHaveBeenCalledTimes(1);
   });
 
+  it("does not invoke Codex or apply adaptations twice for concurrent duplicate completions", async () => {
+    const releaseCodexCallbacks: Array<() => void> = [];
+    const codexStarted = deferred();
+    const duplicateCodexStarted = deferred();
+    const processRunner = vi.fn(
+      () =>
+        new Promise<Awaited<ReturnType<ProcessRunner>>>((resolveCodex) => {
+          if (releaseCodexCallbacks.length === 0) {
+            codexStarted.resolve();
+          } else {
+            duplicateCodexStarted.resolve();
+          }
+          releaseCodexCallbacks.push(() =>
+            resolveCodex({
+              exitCode: 0,
+              stdout: JSON.stringify({
+                action: "increase_noise_sensitivity",
+                target: "global",
+                rationale: "The player sprinted frequently.",
+              }),
+              stderr: "",
+              timedOut: false,
+            }),
+          );
+        }),
+    );
+    const app = createTestApp(processRunner);
+    const start = await request(app).post("/api/runs").send({});
+    const body = {
+      outcome: "capture",
+      durationMs: 20_000,
+      idempotencyKey: "parallel-completion",
+      events: [
+        positionedEvent("sprint", { corridorId: "west_corridor" }),
+        positionedEvent("sprint", { corridorId: "west_corridor" }),
+      ],
+    };
+
+    const firstCompletion = request(app)
+      .post(`/api/runs/${start.body.runId}/complete`)
+      .send(body)
+      .then((response) => response);
+    await codexStarted.promise;
+    const duplicateCompletion = request(app)
+      .post(`/api/runs/${start.body.runId}/complete`)
+      .send(body)
+      .then((response) => response);
+    await Promise.race([
+      duplicateCodexStarted.promise,
+      new Promise((resolve) => setTimeout(resolve, 20)),
+    ]);
+    for (const release of releaseCodexCallbacks) release();
+    const [first, duplicate] = await Promise.all([firstCompletion, duplicateCompletion]);
+    const nextRun = await request(app).post("/api/runs").send({});
+
+    expect(first.status).toBe(200);
+    expect(duplicate.status).toBe(200);
+    expect(duplicate.body).toEqual(first.body);
+    expect(processRunner).toHaveBeenCalledTimes(1);
+    expect(nextRun.body.config.adaptations).toHaveLength(1);
+  });
+
   it("keeps duplicate completion responses stable after later adaptations", async () => {
     const decisions = [
       {
@@ -202,5 +273,43 @@ describe("run lifecycle API", () => {
         retryable: true,
       },
     });
+  });
+
+  it("rolls back accepted adaptations when completion report persistence fails", async () => {
+    const database = createDatabase(":memory:");
+    database.exec(`
+      CREATE TRIGGER fail_report_insert
+      BEFORE INSERT ON reports
+      BEGIN
+        SELECT RAISE(FAIL, 'forced report failure');
+      END;
+    `);
+    const app = createTestApp(
+      vi.fn(async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({
+          action: "increase_corridor_patrol",
+          target: "east_corridor",
+          rationale: "The player repeatedly used the east corridor.",
+        }),
+        stderr: "",
+        timedOut: false,
+      })),
+      database,
+    );
+    const start = await request(app).post("/api/runs").send({});
+
+    const response = await request(app)
+      .post(`/api/runs/${start.body.runId}/complete`)
+      .send({
+        outcome: "escape",
+        durationMs: 42_000,
+        idempotencyKey: "completion-report-failure",
+        events: [positionedEvent("move", { corridorId: "east_corridor" })],
+      });
+    const nextRun = await request(app).post("/api/runs").send({});
+
+    expect(response.status).toBe(400);
+    expect(nextRun.body.config.adaptations).toEqual([]);
   });
 });

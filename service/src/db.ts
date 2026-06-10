@@ -40,6 +40,7 @@ export function createDatabase(filename: string): ServiceDatabase {
       report_json TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_run_id_unique ON reports(run_id);
     CREATE TABLE IF NOT EXISTS completion_requests (
       idempotency_key TEXT PRIMARY KEY,
       run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
