@@ -3,6 +3,10 @@ import { prisonMap } from "../../client/src/game/map";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
 import type { SimulationInput } from "../../client/src/game/types";
 import type { NextRunConfig } from "../../shared/contracts";
+import { AnalyticsService } from "../../service/src/services/AnalyticsService";
+import { createDatabase } from "../../service/src/db";
+import { EventRepository } from "../../service/src/repositories/EventRepository";
+import { RunRepository } from "../../service/src/repositories/RunRepository";
 
 const noInput: SimulationInput = {
   direction: { x: 0, y: 0 },
@@ -112,6 +116,69 @@ describe("GameSimulation", () => {
     const sprintNoise = sprinting.getEvents().find((event) => event.type === "noise");
     expect(sprintNoise?.payload.radius).toBeGreaterThan(walkNoise?.payload.radius as number);
     expect(sprinting.getEvents().some((event) => event.type === "sprint")).toBe(true);
+  });
+
+  it("emits movement corridor ids that feed analytics route scoring", () => {
+    const simulation = new GameSimulation();
+    simulation.setPlayerPosition({ x: 7.5, y: 2.5 });
+
+    simulation.step({ ...noInput, direction: { x: 1, y: 0 } });
+    simulation.step({ direction: { x: 1, y: 0 }, sprint: true, interact: false });
+
+    const routeEvents = simulation
+      .getEvents()
+      .filter((event) => event.type === "move" || event.type === "sprint");
+    expect(routeEvents).toHaveLength(2);
+    expect(routeEvents.map((event) => event.payload.corridorId)).toEqual([
+      "east_corridor",
+      "east_corridor",
+    ]);
+
+    const database = createDatabase(":memory:");
+    const runs = new RunRepository(database);
+    const events = new EventRepository(database);
+    const run = runs.startRun("{}");
+    events.insertRunEvents(run.id, simulation.getEvents());
+    runs.completeRun(run.id, "capture", 1_000, "complete-corridor-route");
+    const analytics = new AnalyticsService(events);
+
+    expect(analytics.summarize(1).mostUsedCorridor).toBe("east_corridor");
+  });
+
+  it("makes noise-sensitive guards react to adapted sprinting from farther away", () => {
+    const guardOverride = {
+      id: "guard-1",
+      position: { x: 5.65, y: 4.5 },
+      facing: { x: 1, y: 0 },
+    };
+
+    const walking = new GameSimulation({ guardOverrides: [guardOverride] });
+    walking.step({ ...noInput, direction: { x: 1, y: 0 } });
+
+    const baselineSprint = new GameSimulation({ guardOverrides: [guardOverride] });
+    baselineSprint.step({ direction: { x: 1, y: 0 }, sprint: true, interact: false });
+
+    const adaptedSprint = new GameSimulation({
+      guardOverrides: [guardOverride],
+      nextRunConfig: {
+        adaptations: [
+          {
+            action: "increase_noise_sensitivity",
+            target: "global",
+            level: 2,
+            rationale: "Frequent sprinting.",
+          },
+        ],
+      },
+    });
+    adaptedSprint.step({ direction: { x: 1, y: 0 }, sprint: true, interact: false });
+
+    expect(walking.getSnapshot().guards[0].state).toBe("patrol");
+    expect(baselineSprint.getSnapshot().guards[0].state).toBe("patrol");
+    expect(adaptedSprint.getSnapshot().guards[0].state).toBe("investigate");
+    expect(adaptedSprint.getSnapshot().guards[0].suspicion).toBeGreaterThan(
+      baselineSprint.getSnapshot().guards[0].suspicion,
+    );
   });
 
   it("conceals the player from sight while inside a locker", () => {

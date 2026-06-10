@@ -2,8 +2,8 @@ import type { ActiveAdaptation, RunEvent, RunOutcome } from "../../../shared/con
 import { DetectionSystem } from "./DetectionSystem";
 import { GuardFSM, type GuardRuntime } from "./GuardFSM";
 import { HidingSystem } from "./HidingSystem";
-import { isWall, prisonMap } from "./map";
-import { NoiseSystem } from "./NoiseSystem";
+import { corridorAt, isWall, prisonMap } from "./map";
+import { NoiseSystem, type NoiseEvent } from "./NoiseSystem";
 import { ObjectiveSystem } from "./ObjectiveSystem";
 import { RunEventCollector } from "./RunEventCollector";
 import type {
@@ -21,6 +21,10 @@ const stepMs = 100;
 const walkSpeed = 0.12;
 const sprintSpeed = 0.22;
 const inspectionIntervalMs = 1800;
+const noiseSuspicion = {
+  walk: 0.08,
+  sprint: 0.18,
+};
 
 function normalize(vector: Vector): Vector {
   const length = Math.hypot(vector.x, vector.y);
@@ -216,10 +220,11 @@ export class GameSimulation {
     }
 
     this.player.position = next;
+    const corridorId = corridorAt(this.map, this.player.position);
     this.events.record(this.timeMs, {
       type: input.sprint ? "sprint" : "move",
       position: { ...this.player.position },
-      payload: {},
+      payload: corridorId ? { corridorId } : {},
     });
 
     const noise = this.noise.movementNoise(this.player, true, input.sprint);
@@ -229,6 +234,28 @@ export class GameSimulation {
         position: noise.position,
         payload: { radius: noise.radius, source: noise.source },
       });
+      this.propagateNoise(noise);
+    }
+  }
+
+  private propagateNoise(noise: NoiseEvent): void {
+    for (const guard of this.guards) {
+      if (guard.state === "search" || guard.state === "chase") {
+        continue;
+      }
+
+      const distance = Math.hypot(guard.position.x - noise.position.x, guard.position.y - noise.position.y);
+      if (distance > noise.radius) {
+        continue;
+      }
+
+      guard.state = "investigate";
+      guard.facing = normalize({
+        x: noise.position.x - guard.position.x,
+        y: noise.position.y - guard.position.y,
+      });
+      const proximity = 1 - distance / Math.max(noise.radius, 0.001);
+      guard.suspicion = Math.min(0.95, guard.suspicion + noiseSuspicion[noise.source] * (1 + proximity));
     }
   }
 
