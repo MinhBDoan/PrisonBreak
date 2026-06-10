@@ -16,6 +16,7 @@ import { EventRepository } from "../repositories/EventRepository";
 import { ReportRepository } from "../repositories/ReportRepository";
 import { RunCompletionConflictError, RunRepository } from "../repositories/RunRepository";
 import { AnalyticsService } from "../services/AnalyticsService";
+import { AdaptationValidator } from "../services/AdaptationValidator";
 import { BlockingCodexError, CodexService, type ProcessRunner } from "../services/CodexService";
 
 export interface RunsDependencies {
@@ -32,6 +33,7 @@ export function createRunsRouter(dependencies: RunsDependencies): Router {
   const reports = new ReportRepository(dependencies.database);
   const analytics = new AnalyticsService(events);
   const codex = new CodexService({ processRunner: dependencies.codexProcessRunner });
+  const adaptationValidator = new AdaptationValidator();
 
   router.post("/", (_request, response) => {
     const config = nextRunConfig(adaptations);
@@ -78,6 +80,7 @@ export function createRunsRouter(dependencies: RunsDependencies): Router {
       reports,
       analytics,
       codex,
+      adaptationValidator,
       runId,
       request: parsed.data,
     });
@@ -115,6 +118,7 @@ async function finalizeCompletion({
   reports,
   analytics,
   codex,
+  adaptationValidator,
   runId,
   request,
 }: {
@@ -125,6 +129,7 @@ async function finalizeCompletion({
   reports: ReportRepository;
   analytics: AnalyticsService;
   codex: CodexService;
+  adaptationValidator: AdaptationValidator;
   runId: number;
   request: {
     outcome: RunOutcome;
@@ -154,6 +159,7 @@ async function finalizeCompletion({
     completedRun.outcome as RunOutcome,
     summary,
     decision,
+    adaptationValidator,
   );
 }
 
@@ -165,11 +171,13 @@ function storeFinalizedCompletion(
   outcome: RunOutcome,
   summary: IntelligenceReport["summary"],
   decision: AdaptationDecision,
+  adaptationValidator: AdaptationValidator,
 ): CompleteRunResponse {
   return database.transaction(() => {
     const existingCompletion = reports.findLatestCompletion(runId);
     if (existingCompletion) return existingCompletion;
 
+    adaptationValidator.validate(decision, summary, adaptations.listDecisionHistory());
     const acceptedAdaptation = adaptations.storeAccepted(runId, decision);
     const report: IntelligenceReport = {
       summary,

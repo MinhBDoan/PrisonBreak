@@ -312,4 +312,133 @@ describe("run lifecycle API", () => {
     expect(response.status).toBe(400);
     expect(nextRun.body.config.adaptations).toEqual([]);
   });
+
+  it("blocks one of two different concurrent completions when finalizing both would exceed an adaptation cap", async () => {
+    const database = createDatabase(":memory:");
+    const seedApp = createTestApp(
+      vi.fn(async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({
+          action: "increase_noise_sensitivity",
+          target: "global",
+          rationale: "The player sprinted frequently.",
+        }),
+        stderr: "",
+        timedOut: false,
+      })),
+      database,
+    );
+    const seedStart = await request(seedApp).post("/api/runs").send({});
+    await request(seedApp)
+      .post(`/api/runs/${seedStart.body.runId}/complete`)
+      .send({
+        outcome: "capture",
+        durationMs: 20_000,
+        idempotencyKey: "seed-noise-adaptation",
+        events: [
+          positionedEvent("sprint", { corridorId: "west_corridor" }),
+          positionedEvent("sprint", { corridorId: "west_corridor" }),
+        ],
+      });
+
+    const releaseCodexCallbacks: Array<() => void> = [];
+    const firstConcurrentCodexStarted = deferred();
+    const secondConcurrentCodexStarted = deferred();
+    let calls = 0;
+    const processRunner = vi.fn(
+      () =>
+        new Promise<Awaited<ReturnType<ProcessRunner>>>((resolveCodex) => {
+          calls += 1;
+          const codexResult = {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              action: "increase_noise_sensitivity",
+              target: "global",
+              rationale: "The player sprinted frequently.",
+            }),
+            stderr: "",
+            timedOut: false,
+          } as const;
+          if (calls > 2) {
+            resolveCodex(codexResult);
+            return;
+          }
+          if (calls === 1) {
+            firstConcurrentCodexStarted.resolve();
+          }
+          if (calls === 2) {
+            secondConcurrentCodexStarted.resolve();
+          }
+          releaseCodexCallbacks.push(() => resolveCodex(codexResult));
+        }),
+    );
+    const app = createTestApp(processRunner, database);
+    const firstStart = await request(app).post("/api/runs").send({});
+    const secondStart = await request(app).post("/api/runs").send({});
+
+    const firstCompletion = request(app)
+      .post(`/api/runs/${firstStart.body.runId}/complete`)
+      .send({
+        outcome: "capture",
+        durationMs: 21_000,
+        idempotencyKey: "parallel-cap-first",
+        events: [
+          positionedEvent("sprint", { corridorId: "west_corridor" }),
+          positionedEvent("sprint", { corridorId: "west_corridor" }),
+        ],
+      })
+      .then((response) => response);
+    await firstConcurrentCodexStarted.promise;
+    const secondCompletion = request(app)
+      .post(`/api/runs/${secondStart.body.runId}/complete`)
+      .send({
+        outcome: "capture",
+        durationMs: 22_000,
+        idempotencyKey: "parallel-cap-second",
+        events: [
+          positionedEvent("sprint", { corridorId: "west_corridor" }),
+          positionedEvent("sprint", { corridorId: "west_corridor" }),
+        ],
+      })
+      .then((response) => response);
+    await secondConcurrentCodexStarted.promise;
+    for (const release of releaseCodexCallbacks) release();
+
+    const [first, second] = await Promise.all([firstCompletion, secondCompletion]);
+    const statuses = [first.status, second.status].sort();
+    const blocked = [first, second].find((response) => response.status === 503);
+    const nextRun = await request(app).post("/api/runs").send({});
+    const noiseAdaptation = nextRun.body.config.adaptations.find(
+      (adaptation: { action: string }) => adaptation.action === "increase_noise_sensitivity",
+    );
+
+    expect(statuses).toEqual([200, 503]);
+    expect(blocked?.body).toMatchObject({
+      error: {
+        code: "invalid_decision",
+        retryable: true,
+      },
+    });
+    expect(noiseAdaptation).toMatchObject({
+      action: "increase_noise_sensitivity",
+      target: "global",
+      level: 2,
+    });
+
+    const retryBlocked = await request(app)
+      .post(`/api/runs/${blocked === first ? firstStart.body.runId : secondStart.body.runId}/complete`)
+      .send({
+        outcome: "capture",
+        durationMs: blocked === first ? 21_000 : 22_000,
+        idempotencyKey: blocked === first ? "parallel-cap-first" : "parallel-cap-second",
+        events: [
+          positionedEvent("sprint", { corridorId: "west_corridor" }),
+          positionedEvent("sprint", { corridorId: "west_corridor" }),
+        ],
+      });
+    const afterRetry = await request(app).post("/api/runs").send({});
+
+    expect(retryBlocked.status).toBe(503);
+    expect(afterRetry.body.config.adaptations).toEqual(nextRun.body.config.adaptations);
+  });
 });
