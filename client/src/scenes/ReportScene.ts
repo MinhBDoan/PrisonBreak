@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { BlockingApiError, GameApiClient } from "../api/GameApiClient";
+import { createNextRunStarter } from "./ReportSceneFlow";
 import { Hud } from "../ui/Hud";
 import type { CompleteRunResponse, RunEvent, RunOutcome } from "../../../shared/contracts";
 
@@ -17,6 +18,7 @@ export class ReportScene extends Phaser.Scene {
   private completion: ReportSceneData | null = null;
   private response: CompleteRunResponse | null = null;
   private submitting = false;
+  private beginNextRun!: () => Promise<void>;
 
   constructor() {
     super("report");
@@ -30,6 +32,19 @@ export class ReportScene extends Phaser.Scene {
     this.hud = new Hud(hudRoot);
     this.api = new GameApiClient();
     this.completion = data;
+    this.beginNextRun = createNextRunStarter({
+      api: this.api,
+      hasCompletionResponse: () => Boolean(this.response),
+      showLoading: (message) => {
+        this.hud.showLoading(message);
+      },
+      showReportError: (error, onRetry) => {
+        this.hud.showReportError(error, onRetry);
+      },
+      startScene: (key, start) => {
+        this.scene.start(key, start);
+      },
+    });
     void this.submitCompletion();
   }
 
@@ -58,29 +73,6 @@ export class ReportScene extends Phaser.Scene {
       });
     } finally {
       this.submitting = false;
-    }
-  }
-
-  private async beginNextRun(): Promise<void> {
-    if (!this.response) {
-      return;
-    }
-    this.hud.showLoading("Starting Next Run");
-    try {
-      const start = await this.api.startRun();
-      this.scene.start("game", start);
-    } catch (error) {
-      const blockingError =
-        error instanceof BlockingApiError
-          ? error.blockingError
-          : {
-              code: "start_failed",
-              message: error instanceof Error ? error.message : "Could not start the next run.",
-              retryable: true,
-            };
-      this.hud.showReportError(blockingError, () => {
-        void this.beginNextRun();
-      });
     }
   }
 }
