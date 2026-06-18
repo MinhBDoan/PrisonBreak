@@ -2,7 +2,7 @@ import type { ActiveAdaptation, RunEvent, RunOutcome } from "../../../shared/con
 import { DetectionSystem } from "./DetectionSystem";
 import { GuardFSM, type GuardRuntime } from "./GuardFSM";
 import { HidingSystem } from "./HidingSystem";
-import { corridorAt, isWall, prisonMap } from "./map";
+import { collidesWithSolidObjects, corridorAt, isWall, prisonMap } from "./map";
 import { NoiseSystem, type NoiseEvent } from "./NoiseSystem";
 import { ObjectiveSystem } from "./ObjectiveSystem";
 import { RunEventCollector } from "./RunEventCollector";
@@ -18,13 +18,16 @@ import type {
 } from "./types";
 
 const stepMs = 100;
-const walkSpeed = 0.12;
-const sprintSpeed = 0.22;
+const walkSpeed = 0.018333;
+const sprintSpeed = 0.033333;
 const inspectionIntervalMs = 1800;
 const noiseSuspicion = {
   walk: 0.08,
   sprint: 0.18,
 };
+const noiseChaseDurationMs = 3000;
+const wallCollisionRadius = 0.45;
+const playerObjectCollisionRadius = 0.28;
 
 function normalize(vector: Vector): Vector {
   const length = Math.hypot(vector.x, vector.y);
@@ -39,6 +42,7 @@ function cloneGuard(guard: GuardRuntime): GuardRuntime {
     ...guard,
     position: { ...guard.position },
     facing: { ...guard.facing },
+    lastSeenPlayerPosition: guard.lastSeenPlayerPosition ? { ...guard.lastSeenPlayerPosition } : null,
   };
 }
 
@@ -70,6 +74,8 @@ function applyGuardOverrides(guards: GuardRuntime[], overrides: GuardOverride[])
       captureProgress: 0,
       inspectionTarget: null,
       searchUntilMs: 0,
+      chaseUntilMs: 0,
+      lastSeenPlayerPosition: null,
     });
   }
   return overrides.length > 0 ? overridden.filter((guard) => overrides.some((override) => override.id === guard.id)) : overridden;
@@ -163,7 +169,7 @@ export class GameSimulation {
       if (canSeePlayer) {
         this.recordDetection(guard.id, "line_of_sight");
       }
-      if (this.guardFsm.updateAwareness(guard, canSeePlayer, this.player.position)) {
+      if (this.guardFsm.updateAwareness(guard, canSeePlayer, this.player.position, this.timeMs)) {
         this.complete("capture");
       }
     }
@@ -215,7 +221,7 @@ export class GameSimulation {
       x: this.player.position.x + direction.x * speed,
       y: this.player.position.y + direction.y * speed,
     };
-    if (this.collidesWithWall(next)) {
+    if (this.collidesWithObstacle(next)) {
       return;
     }
 
@@ -249,7 +255,9 @@ export class GameSimulation {
         continue;
       }
 
-      guard.state = "investigate";
+      guard.state = "chase";
+      guard.lastSeenPlayerPosition = { ...noise.position };
+      guard.chaseUntilMs = this.timeMs + noiseChaseDurationMs;
       guard.facing = normalize({
         x: noise.position.x - guard.position.x,
         y: noise.position.y - guard.position.y,
@@ -259,14 +267,17 @@ export class GameSimulation {
     }
   }
 
-  private collidesWithWall(position: Vector): boolean {
-    const radius = 0.45;
-    return (
-      isWall(this.map, { x: position.x - radius, y: position.y - radius }) ||
-      isWall(this.map, { x: position.x + radius, y: position.y - radius }) ||
-      isWall(this.map, { x: position.x - radius, y: position.y + radius }) ||
-      isWall(this.map, { x: position.x + radius, y: position.y + radius })
-    );
+  private collidesWithObstacle(position: Vector): boolean {
+    const touchesWall =
+      isWall(this.map, { x: position.x - wallCollisionRadius, y: position.y - wallCollisionRadius }) ||
+      isWall(this.map, { x: position.x + wallCollisionRadius, y: position.y - wallCollisionRadius }) ||
+      isWall(this.map, { x: position.x - wallCollisionRadius, y: position.y + wallCollisionRadius }) ||
+      isWall(this.map, { x: position.x + wallCollisionRadius, y: position.y + wallCollisionRadius });
+    if (touchesWall) {
+      return true;
+    }
+
+    return collidesWithSolidObjects(this.map, position, playerObjectCollisionRadius);
   }
 
   private interact(): void {

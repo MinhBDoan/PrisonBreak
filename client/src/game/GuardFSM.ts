@@ -1,4 +1,4 @@
-import { corridorAt } from "./map";
+import { collidesWithSolidObjects, corridorAt } from "./map";
 import type {
   AppliedAdaptations,
   GuardState,
@@ -12,9 +12,13 @@ import type {
 const suspicionRate = 0.04;
 const suspicionDecay = 0.025;
 const chaseThreshold = 1;
-const captureRate = 0.012;
-const guardSpeed = 0.035;
+const captureRate = 0.003;
+const guardSpeed = 0.003667;
+const chaseSpeedMultiplier = 1.15;
+const patrolAdaptationSpeedBonus = 0.2;
 const searchDurationMs = 900;
+const lostSightChaseDurationMs = 6000;
+const guardObjectCollisionRadius = 0.28;
 
 function cloneVector(vector: Vector): Vector {
   return { x: vector.x, y: vector.y };
@@ -44,6 +48,8 @@ function moveToward(position: Vector, target: Vector, speed: number): { position
 
 export type GuardRuntime = GuardStateSnapshot & {
   searchUntilMs: number;
+  chaseUntilMs: number;
+  lastSeenPlayerPosition: Vector | null;
 };
 
 export class GuardFSM {
@@ -59,6 +65,8 @@ export class GuardFSM {
       captureProgress: 0,
       inspectionTarget: null,
       searchUntilMs: 0,
+      chaseUntilMs: 0,
+      lastSeenPlayerPosition: null,
     }));
 
     if (adaptations.reserveGuardActive) {
@@ -73,6 +81,8 @@ export class GuardFSM {
         captureProgress: 0,
         inspectionTarget: null,
         searchUntilMs: 0,
+        chaseUntilMs: 0,
+        lastSeenPlayerPosition: null,
       });
     }
 
@@ -97,7 +107,9 @@ export class GuardFSM {
     const target = this.nextTarget(route.points, guard);
     const speed = guardSpeed * this.patrolMultiplier(target);
     const moved = moveToward(guard.position, target, speed);
-    guard.position = moved.position;
+    if (!collidesWithSolidObjects(this.map, moved.position, guardObjectCollisionRadius)) {
+      guard.position = moved.position;
+    }
     if (moved.facing.x !== 0 || moved.facing.y !== 0) {
       guard.facing = moved.facing;
     }
@@ -107,24 +119,40 @@ export class GuardFSM {
     }
   }
 
-  updateAwareness(guard: GuardRuntime, canSeePlayer: boolean, playerPosition: Vector): boolean {
+  updateAwareness(guard: GuardRuntime, canSeePlayer: boolean, playerPosition: Vector, nowMs: number): boolean {
     if (canSeePlayer) {
+      guard.lastSeenPlayerPosition = cloneVector(playerPosition);
+      guard.chaseUntilMs = nowMs + lostSightChaseDurationMs;
       guard.suspicion = Math.min(chaseThreshold, guard.suspicion + suspicionRate);
       if (guard.suspicion >= chaseThreshold) {
         guard.state = "chase";
       } else if (guard.state === "patrol") {
         guard.state = "investigate";
       }
-    } else {
-      guard.suspicion = Math.max(0, guard.suspicion - suspicionDecay);
-      if ((guard.state === "investigate" || guard.state === "chase") && guard.suspicion === 0) {
-        guard.state = "return";
+    } else if (guard.state !== "chase") {
+      if (guard.state === "investigate" && guard.lastSeenPlayerPosition && guard.suspicion > 0) {
+        guard.state = "chase";
+      } else {
+        guard.suspicion = Math.max(0, guard.suspicion - suspicionDecay);
+        if (guard.state === "investigate" && guard.suspicion === 0) {
+          guard.state = "return";
+        }
       }
     }
 
     if (guard.state === "chase") {
-      const moved = moveToward(guard.position, playerPosition, guardSpeed * 1.4);
-      guard.position = moved.position;
+      if (!canSeePlayer && nowMs > guard.chaseUntilMs) {
+        guard.state = "return";
+        guard.captureProgress = Math.max(0, guard.captureProgress - 0.02);
+        guard.lastSeenPlayerPosition = null;
+        return false;
+      }
+
+      const chaseTarget = canSeePlayer ? playerPosition : guard.lastSeenPlayerPosition ?? playerPosition;
+      const moved = moveToward(guard.position, chaseTarget, guardSpeed * chaseSpeedMultiplier);
+      if (!collidesWithSolidObjects(this.map, moved.position, guardObjectCollisionRadius)) {
+        guard.position = moved.position;
+      }
       if (moved.facing.x !== 0 || moved.facing.y !== 0) {
         guard.facing = moved.facing;
       }
@@ -165,6 +193,6 @@ export class GuardFSM {
     if (!corridor) {
       return 1;
     }
-    return 1 + (this.adaptations.patrolFrequency[corridor] ?? 0) * 0.35;
+    return 1 + (this.adaptations.patrolFrequency[corridor] ?? 0) * patrolAdaptationSpeedBonus;
   }
 }

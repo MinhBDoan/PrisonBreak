@@ -1,55 +1,62 @@
-import type { CorridorId, PrisonMap, Vector } from "./types";
+import type { CorridorId, CoverObject, PrisonMap, Vector } from "./types";
 
 export const tileSize = 1;
 
 export const prisonMap: PrisonMap = {
-  width: 12,
-  height: 8,
+  width: 26,
+  height: 12,
   tiles: [
-    "############",
-    "#..........#",
-    "#..........#",
-    "#.##.......#",
-    "#.##.......#",
-    "#..........#",
-    "#..........#",
-    "############",
+    "##########################",
+    "#..........##............#",
+    "#..........##............#",
+    "#..........##............#",
+    "#........................#",
+    "#........................#",
+    "#..........##............#",
+    "#..........##............#",
+    "#..........##............#",
+    "#........................#",
+    "#........................#",
+    "##########################",
   ],
   corridors: {
-    west_corridor: { minX: 1, maxX: 3, minY: 1, maxY: 6 },
-    central_corridor: { minX: 4, maxX: 6, minY: 1, maxY: 6 },
-    east_corridor: { minX: 7, maxX: 10, minY: 1, maxY: 6 },
-    security_room: { minX: 8, maxX: 10, minY: 1, maxY: 3 },
-    exit_hall: { minX: 8, maxX: 10, minY: 4, maxY: 6 },
+    west_corridor: { minX: 1, maxX: 8, minY: 1, maxY: 10 },
+    central_corridor: { minX: 9, maxX: 16, minY: 4, maxY: 10 },
+    east_corridor: { minX: 17, maxX: 24, minY: 4, maxY: 10 },
+    security_room: { minX: 17, maxX: 24, minY: 1, maxY: 3 },
+    exit_hall: { minX: 17, maxX: 24, minY: 7, maxY: 10 },
   },
-  key: { id: "security_key", position: { x: 9.5, y: 2.5 } },
-  exit: { id: "locked_exit", position: { x: 10.5, y: 5.5 } },
+  key: { id: "security_key", position: { x: 22.5, y: 2.5 } },
+  exit: { id: "locked_exit", position: { x: 24.5, y: 9.5 } },
   hidingSpots: [
-    { id: "locker_alpha", type: "locker", position: { x: 6.5, y: 2.5 } },
-    { id: "locker_bravo", type: "locker", position: { x: 8.5, y: 5.5 } },
-    { id: "shadow_nook", type: "shadow", position: { x: 1.5, y: 5.5 } },
+    { id: "locker_alpha", type: "locker", position: { x: 10.5, y: 4.5 } },
+    { id: "locker_bravo", type: "locker", position: { x: 20.5, y: 8.5 } },
+    { id: "shadow_nook", type: "shadow", position: { x: 2.5, y: 9.5 } },
+  ],
+  coverObjects: [
+    { id: "crate_central_alpha", position: { x: 9.65, y: 4.5 }, width: 0.9, height: 0.55 },
   ],
   patrolRoutes: [
     {
       id: "west_loop",
       points: [
-        { x: 3.5, y: 2.5, corridor: "central_corridor" },
-        { x: 6.5, y: 2.5, corridor: "central_corridor" },
-        { x: 6.5, y: 5.5, corridor: "central_corridor" },
-        { x: 3.5, y: 5.5, corridor: "central_corridor" },
+        { x: 8.5, y: 4.5, corridor: "central_corridor" },
+        { x: 14.5, y: 4.5, corridor: "central_corridor" },
+        { x: 14.5, y: 9.5, corridor: "central_corridor" },
+        { x: 8.5, y: 9.5, corridor: "central_corridor" },
       ],
     },
     {
       id: "east_loop",
       points: [
-        { x: 7.5, y: 2.5, corridor: "east_corridor" },
-        { x: 9.5, y: 2.5, corridor: "security_room" },
-        { x: 9.5, y: 5.5, corridor: "exit_hall" },
-        { x: 7.5, y: 5.5, corridor: "east_corridor" },
+        { x: 17.5, y: 4.5, corridor: "east_corridor" },
+        { x: 22.5, y: 2.5, corridor: "security_room" },
+        { x: 22.5, y: 9.5, corridor: "exit_hall" },
+        { x: 17.5, y: 9.5, corridor: "east_corridor" },
       ],
     },
   ],
-  reserveGuardSpawn: { x: 9.5, y: 5.5 },
+  reserveGuardSpawn: { x: 22.5, y: 9.5 },
 };
 
 export function tileAt(map: PrisonMap, position: Vector): string {
@@ -63,6 +70,38 @@ export function tileAt(map: PrisonMap, position: Vector): string {
 
 export function isWall(map: PrisonMap, position: Vector): boolean {
   return tileAt(map, position) === "#";
+}
+
+export function lockerCollisionObjects(map: PrisonMap): CoverObject[] {
+  return map.hidingSpots
+    .filter((spot) => spot.type === "locker")
+    .map((spot) => ({
+      id: spot.id,
+      position: spot.position,
+      width: 0.68,
+      height: 0.9,
+    }));
+}
+
+export function overlapsRectangle(
+  position: Vector,
+  radius: number,
+  obstacle: { position: Vector; width: number; height: number },
+): boolean {
+  const halfWidth = obstacle.width / 2;
+  const halfHeight = obstacle.height / 2;
+  return (
+    position.x + radius > obstacle.position.x - halfWidth &&
+    position.x - radius < obstacle.position.x + halfWidth &&
+    position.y + radius > obstacle.position.y - halfHeight &&
+    position.y - radius < obstacle.position.y + halfHeight
+  );
+}
+
+export function collidesWithSolidObjects(map: PrisonMap, position: Vector, radius: number): boolean {
+  return [...map.coverObjects, ...lockerCollisionObjects(map)].some((obstacle) =>
+    overlapsRectangle(position, radius, obstacle),
+  );
 }
 
 export function corridorAt(map: PrisonMap, position: Vector): CorridorId | null {

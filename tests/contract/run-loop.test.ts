@@ -77,6 +77,28 @@ function createTransport(): ApiTransport & {
 }
 
 describe("adaptive run loop contract", () => {
+  it("reports HTML fallthrough responses as service connectivity errors", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("<!doctype html><html></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      })) as typeof fetch;
+    const client = new GameApiClient();
+
+    try {
+      await expect(client.ready()).rejects.toMatchObject({
+        blockingError: {
+          code: "service_unreachable",
+          message: expect.stringContaining("non-JSON response"),
+          retryable: true,
+        },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("submits Run 1 events, applies the returned adaptation to Run 2, and blocks until Retry succeeds", async () => {
     const transport = createTransport();
     const client = new GameApiClient({ transport, idempotencyKeyFactory: () => "run-1-completion" });

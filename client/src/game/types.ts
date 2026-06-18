@@ -18,6 +18,13 @@ export type HidingSpot = {
   position: Vector;
 };
 
+export type CoverObject = {
+  id: string;
+  position: Vector;
+  width: number;
+  height: number;
+};
+
 export type ObjectivePoint = {
   id: string;
   position: Vector;
@@ -40,6 +47,7 @@ export type PrisonMap = {
   key: ObjectivePoint;
   exit: ObjectivePoint;
   hidingSpots: HidingSpot[];
+  coverObjects: CoverObject[];
   patrolRoutes: PatrolRoute[];
   reserveGuardSpawn: Vector;
 };

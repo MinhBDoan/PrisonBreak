@@ -54,7 +54,16 @@ class FetchTransport implements ApiTransport {
       body: init.body ? JSON.stringify(init.body) : undefined,
     });
     const text = await response.text();
-    const body = text ? JSON.parse(text) : null;
+    let body: unknown = null;
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new Error(
+          `Service returned non-JSON response from ${path}. Is the API service running on ${this.baseUrl}?`,
+        );
+      }
+    }
     return { status: response.status, body };
   }
 }

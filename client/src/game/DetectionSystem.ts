@@ -1,7 +1,7 @@
 import { isWall } from "./map";
-import type { GuardStateSnapshot, PlayerState, PrisonMap, Vector } from "./types";
+import type { CoverObject, GuardStateSnapshot, PlayerState, PrisonMap, Vector } from "./types";
 
-const visionRange = 5;
+const visionRange = 2.5;
 const fieldOfViewDot = 0.45;
 
 function normalize(vector: Vector): Vector {
@@ -14,6 +14,17 @@ function normalize(vector: Vector): Vector {
 
 function dot(a: Vector, b: Vector): number {
   return a.x * b.x + a.y * b.y;
+}
+
+function isInsideCover(cover: CoverObject, position: Vector): boolean {
+  const halfWidth = cover.width / 2;
+  const halfHeight = cover.height / 2;
+  return (
+    position.x >= cover.position.x - halfWidth &&
+    position.x <= cover.position.x + halfWidth &&
+    position.y >= cover.position.y - halfHeight &&
+    position.y <= cover.position.y + halfHeight
+  );
 }
 
 export class DetectionSystem {
@@ -51,7 +62,7 @@ export class DetectionSystem {
         x: from.x + (to.x - from.x) * t,
         y: from.y + (to.y - from.y) * t,
       };
-      if (isWall(this.map, position)) {
+      if (isWall(this.map, position) || this.map.coverObjects.some((cover) => isInsideCover(cover, position))) {
         return false;
       }
     }

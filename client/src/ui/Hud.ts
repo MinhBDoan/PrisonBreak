@@ -124,6 +124,16 @@ export class Hud {
     `;
   }
 
+  showPaused(): void {
+    this.root.innerHTML = `
+      <section class="menu-card">
+        <p class="hud__eyebrow">Game Paused</p>
+        <h1>Game Paused</h1>
+        <p>Press Esc again to resume.</p>
+      </section>
+    `;
+  }
+
   showReportLoading(outcome: RunOutcome): void {
     this.root.innerHTML = `
       <section class="menu-card report-card">

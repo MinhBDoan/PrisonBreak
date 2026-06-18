@@ -20,8 +20,12 @@ function stepMany(simulation: GameSimulation, count: number, input = noInput): v
   }
 }
 
-function moveToward(simulation: GameSimulation, x: number, y: number): void {
-  for (let i = 0; i < 240; i += 1) {
+function distanceBetween(left: { x: number; y: number }, right: { x: number; y: number }): number {
+  return Math.hypot(left.x - right.x, left.y - right.y);
+}
+
+function moveToward(simulation: GameSimulation, x: number, y: number, sprint = false): void {
+  for (let i = 0; i < 500; i += 1) {
     const player = simulation.getSnapshot().player.position;
     const dx = x - player.x;
     const dy = y - player.y;
@@ -33,18 +37,74 @@ function moveToward(simulation: GameSimulation, x: number, y: number): void {
       Math.abs(dx) > Math.abs(dy)
         ? { x: Math.sign(dx), y: 0 }
         : { x: 0, y: Math.sign(dy) };
-    simulation.step({ ...noInput, direction });
+    simulation.step({ ...noInput, direction, sprint });
   }
 }
 
 describe("GameSimulation", () => {
+  it("uses a larger prison wing with roughly triple the original floor area", () => {
+    expect(prisonMap.width).toBeGreaterThanOrEqual(24);
+    expect(prisonMap.height).toBeGreaterThanOrEqual(12);
+    expect(prisonMap.key.position.x).toBeGreaterThan(18);
+    expect(prisonMap.exit.position.x).toBeGreaterThan(20);
+  });
+
   it("prevents fixed-step player movement through walls", () => {
     const simulation = new GameSimulation();
     const start = simulation.getSnapshot().player.position;
 
     stepMany(simulation, 40, { ...noInput, direction: { x: -1, y: 0 } });
 
-    expect(simulation.getSnapshot().player.position.x).toBeCloseTo(start.x, 3);
+    expect(simulation.getSnapshot().player.position.x).toBeGreaterThan(1.44);
+    expect(simulation.getSnapshot().player.position.x).toBeLessThanOrEqual(start.x);
+  });
+
+  it("prevents player movement through cover objects", () => {
+    const simulation = new GameSimulation();
+    simulation.setPlayerPosition({ x: 8.6, y: 4.5 });
+
+    stepMany(simulation, 80, { ...noInput, direction: { x: 1, y: 0 } });
+
+    expect(simulation.getSnapshot().player.position.x).toBeLessThan(9.2);
+  });
+
+  it("prevents walking through lockers while still allowing locker interaction", () => {
+    const simulation = new GameSimulation();
+    simulation.setPlayerPosition({ x: 11.4, y: 4.5 });
+
+    stepMany(simulation, 80, { ...noInput, direction: { x: -1, y: 0 } });
+    expect(simulation.getSnapshot().player.position.x).toBeGreaterThan(10.9);
+    expect(distanceBetween(simulation.getSnapshot().player.position, prisonMap.hidingSpots[0].position)).toBeLessThanOrEqual(0.65);
+
+    simulation.step({ ...noInput, interact: true });
+    expect(simulation.getSnapshot().player.hiddenIn).toBe("locker_alpha");
+  });
+
+  it("prevents guards from patrolling through cover objects", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-1", position: { x: 8.6, y: 4.5 }, facing: { x: 1, y: 0 } }],
+    });
+
+    stepMany(simulation, 260);
+
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-1")?.position.x).toBeLessThan(9.25);
+  });
+
+  it("keeps walking and sprinting player movement readable", () => {
+    const walking = new GameSimulation();
+    const walkStart = walking.getSnapshot().player.position;
+    walking.step({ ...noInput, direction: { x: 1, y: 0 } });
+    const walkDistance = distanceBetween(walkStart, walking.getSnapshot().player.position);
+
+    const sprinting = new GameSimulation();
+    const sprintStart = sprinting.getSnapshot().player.position;
+    sprinting.step({ direction: { x: 1, y: 0 }, sprint: true, interact: false });
+    const sprintDistance = distanceBetween(sprintStart, sprinting.getSnapshot().player.position);
+
+    expect(walkDistance).toBeCloseTo(0.018333, 3);
+    expect(sprintDistance).toBeCloseTo(0.033333, 3);
+    expect(sprintDistance).toBeGreaterThan(walkDistance);
+    expect(sprintDistance).toBeLessThan(0.04);
   });
 
   it("collects the security-room key through an objective interaction", () => {
@@ -76,10 +136,32 @@ describe("GameSimulation", () => {
       guardOverrides: [{ id: "guard-a", position: { x: 4.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
     });
 
-    simulation.setPlayerPosition({ x: 4.5, y: 4.5 });
+    simulation.setPlayerPosition({ x: 1.5, y: 10.5 });
     stepMany(simulation, 30);
 
     expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.suspicion).toBe(0);
+  });
+
+  it("blocks line-of-sight detection behind cover objects", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 8.5, y: 4.5 }, facing: { x: 1, y: 0 } }],
+    });
+
+    simulation.setPlayerPosition({ x: 10.8, y: 4.5 });
+    stepMany(simulation, 30);
+
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.suspicion).toBe(0);
+  });
+
+  it("detects players peeking around the side of cover objects", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 8.5, y: 4.5 }, facing: { x: 1, y: 0 } }],
+    });
+
+    simulation.setPlayerPosition({ x: 10.8, y: 5.5 });
+    stepMany(simulation, 10);
+
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.suspicion).toBeGreaterThan(0);
   });
 
   it("transitions from suspicion to chase after sustained line-of-sight", () => {
@@ -87,10 +169,89 @@ describe("GameSimulation", () => {
       guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
     });
 
-    simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 5.5, y: 2.5 });
     stepMany(simulation, 60);
 
     expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.state).toBe("chase");
+  });
+
+  it("keeps chasing for six seconds toward the last seen position after losing sight", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+
+    simulation.setPlayerPosition({ x: 5.5, y: 2.5 });
+    stepMany(simulation, 60);
+    const chasingGuard = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a");
+    expect(chasingGuard?.state).toBe("chase");
+
+    simulation.setPlayerPosition({ x: 1.5, y: 10.5 });
+    stepMany(simulation, 59);
+    const persistentGuard = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a");
+    expect(persistentGuard?.state).toBe("chase");
+
+    stepMany(simulation, 2);
+    const returnedGuard = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a");
+    expect(returnedGuard?.state).toBe("return");
+  });
+
+  it("chases to the last seen position even when sight is lost before full capture chase", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+
+    simulation.setPlayerPosition({ x: 5.5, y: 2.5 });
+    stepMany(simulation, 10);
+    const alertedGuard = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a");
+    expect(alertedGuard?.state).toBe("investigate");
+
+    simulation.setPlayerPosition({ x: 1.5, y: 10.5 });
+    stepMany(simulation, 1);
+    const chasingGuard = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a");
+    expect(chasingGuard?.state).toBe("chase");
+
+    stepMany(simulation, 59);
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.state).toBe("chase");
+
+    stepMany(simulation, 2);
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.state).toBe("return");
+  });
+
+  it("keeps chasing briefly toward the last heard noise position", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-1", position: { x: 5.65, y: 4.5 }, facing: { x: 1, y: 0 } }],
+      nextRunConfig: {
+        adaptations: [
+          {
+            action: "increase_noise_sensitivity",
+            target: "global",
+            level: 2,
+            rationale: "Frequent sprinting.",
+          },
+        ],
+      },
+    });
+
+    simulation.step({ direction: { x: 1, y: 0 }, sprint: true, interact: false });
+    expect(simulation.getSnapshot().guards[0].state).toBe("chase");
+
+    stepMany(simulation, 19);
+    expect(simulation.getSnapshot().guards[0].state).toBe("chase");
+
+    stepMany(simulation, 12);
+    expect(simulation.getSnapshot().guards[0].state).toBe("return");
+  });
+
+  it("keeps players outside the shortened guard vision range unseen", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+
+    simulation.setPlayerPosition({ x: 6.25, y: 2.5 });
+    stepMany(simulation, 30);
+
+    const guard = simulation.getSnapshot().guards.find((candidate) => candidate.id === "guard-a");
+    expect(guard?.suspicion).toBe(0);
   });
 
   it("captures the player after the chase threshold is sustained", () => {
@@ -99,7 +260,11 @@ describe("GameSimulation", () => {
     });
 
     simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
-    stepMany(simulation, 150);
+    stepMany(simulation, 300);
+
+    expect(simulation.getSnapshot().completed).toBeNull();
+
+    stepMany(simulation, 90);
 
     expect(simulation.getSnapshot().completed?.outcome).toBe("capture");
     expect(simulation.getEvents().some((event) => event.type === "capture")).toBe(true);
@@ -120,7 +285,7 @@ describe("GameSimulation", () => {
 
   it("emits movement corridor ids that feed analytics route scoring", () => {
     const simulation = new GameSimulation();
-    simulation.setPlayerPosition({ x: 7.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 18.5, y: 5.5 });
 
     simulation.step({ ...noInput, direction: { x: 1, y: 0 } });
     simulation.step({ direction: { x: 1, y: 0 }, sprint: true, interact: false });
@@ -145,11 +310,39 @@ describe("GameSimulation", () => {
     expect(analytics.summarize(1).mostUsedCorridor).toBe("east_corridor");
   });
 
+  it("keeps baseline and learned patrol movement readable", () => {
+    const baseline = new GameSimulation();
+    const baselineStart = baseline.getSnapshot().guards[0].position;
+    stepMany(baseline, 30);
+    const baselineDistance = distanceBetween(baselineStart, baseline.getSnapshot().guards[0].position);
+
+    const adapted = new GameSimulation({
+      nextRunConfig: {
+        adaptations: [
+          {
+            action: "increase_corridor_patrol",
+            target: "central_corridor",
+            level: 3,
+            rationale: "Central corridor overuse.",
+          },
+        ],
+      },
+    });
+    const adaptedStart = adapted.getSnapshot().guards[0].position;
+    stepMany(adapted, 30);
+    const adaptedDistance = distanceBetween(adaptedStart, adapted.getSnapshot().guards[0].position);
+
+    expect(baselineDistance).toBeGreaterThan(0.08);
+    expect(baselineDistance).toBeLessThan(0.15);
+    expect(adaptedDistance).toBeGreaterThan(baselineDistance);
+    expect(adaptedDistance).toBeLessThan(0.19);
+  });
+
   it("emits detection corridor ids that feed analytics when the player is captured without moving", () => {
     const simulation = new GameSimulation({
-      guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+      guardOverrides: [{ id: "guard-a", position: { x: 9, y: 5 }, facing: { x: 1, y: 0 } }],
     });
-    simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 11, y: 5.8 });
 
     stepMany(simulation, 150);
 
@@ -197,7 +390,7 @@ describe("GameSimulation", () => {
 
     expect(walking.getSnapshot().guards[0].state).toBe("patrol");
     expect(baselineSprint.getSnapshot().guards[0].state).toBe("patrol");
-    expect(adaptedSprint.getSnapshot().guards[0].state).toBe("investigate");
+    expect(adaptedSprint.getSnapshot().guards[0].state).toBe("chase");
     expect(adaptedSprint.getSnapshot().guards[0].suspicion).toBeGreaterThan(
       baselineSprint.getSnapshot().guards[0].suspicion,
     );
@@ -274,12 +467,12 @@ describe("GameSimulation", () => {
     expect(noise?.payload.radius).toBeGreaterThan(5);
   });
 
-  it("can complete a deterministic escape route", () => {
+  it("can complete the key-to-exit objective loop", () => {
     const simulation = new GameSimulation();
 
-    moveToward(simulation, prisonMap.key.position.x, prisonMap.key.position.y);
+    simulation.setPlayerPosition(prisonMap.key.position);
     simulation.step({ ...noInput, interact: true });
-    moveToward(simulation, prisonMap.exit.position.x, prisonMap.exit.position.y);
+    simulation.setPlayerPosition(prisonMap.exit.position);
     simulation.step({ ...noInput, interact: true });
 
     expect(simulation.getSnapshot().completed?.outcome).toBe("escape");

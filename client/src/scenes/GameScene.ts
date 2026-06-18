@@ -13,6 +13,7 @@ type KeySet = {
   right: Phaser.Input.Keyboard.Key;
   shift: Phaser.Input.Keyboard.Key;
   interact: Phaser.Input.Keyboard.Key;
+  pause: Phaser.Input.Keyboard.Key;
 };
 
 export class GameScene extends Phaser.Scene {
@@ -20,8 +21,16 @@ export class GameScene extends Phaser.Scene {
   private viewRenderer!: GameRenderer;
   private hud!: Hud;
   private keys!: KeySet;
+  private readonly heldKeys = new Set<string>();
+  private readonly handleDomKeyDown = (event: KeyboardEvent): void => {
+    this.heldKeys.add(event.code || event.key);
+  };
+  private readonly handleDomKeyUp = (event: KeyboardEvent): void => {
+    this.heldKeys.delete(event.code || event.key);
+  };
   private lastEventCount = 0;
   private completionShown = false;
+  private paused = false;
   private runData: StartRunResponse = {
     runId: 0,
     config: { adaptations: [] },
@@ -41,6 +50,7 @@ export class GameScene extends Phaser.Scene {
     this.runData = data;
     this.lastEventCount = 0;
     this.completionShown = false;
+    this.paused = false;
     this.cameras.main.setBackgroundColor("#081018");
     this.simulation = new GameSimulation({ nextRunConfig: data.config });
     this.viewRenderer = new GameRenderer();
@@ -52,7 +62,21 @@ export class GameScene extends Phaser.Scene {
       right: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       shift: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
       interact: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E),
+      pause: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC),
     };
+    this.heldKeys.clear();
+    window.addEventListener("keydown", this.handleDomKeyDown);
+    window.addEventListener("keyup", this.handleDomKeyUp);
+    document.addEventListener("keydown", this.handleDomKeyDown);
+    document.addEventListener("keyup", this.handleDomKeyUp);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      window.removeEventListener("keydown", this.handleDomKeyDown);
+      window.removeEventListener("keyup", this.handleDomKeyUp);
+      document.removeEventListener("keydown", this.handleDomKeyDown);
+      document.removeEventListener("keyup", this.handleDomKeyUp);
+      this.heldKeys.clear();
+    });
+    this.focusCanvas();
 
     this.viewRenderer.mount(this);
     const snapshot = this.simulation.getSnapshot();
@@ -66,9 +90,22 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (Phaser.Input.Keyboard.JustDown(this.keys.pause)) {
+      this.paused = !this.paused;
+      if (this.paused) {
+        this.hud.showPaused();
+        return;
+      }
+    }
+
+    if (this.paused) {
+      return;
+    }
+
     const snapshotBefore = this.simulation.getSnapshot();
+    const input = this.readInput();
     if (!snapshotBefore.completed) {
-      this.simulation.step(this.readInput());
+      this.simulation.step(input);
     }
 
     this.emitNewNoiseRipples();
@@ -93,15 +130,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   private readInput(): SimulationInput {
+    const right = this.keys.right.isDown || this.isHeld("KeyD", "d", "D");
+    const left = this.keys.left.isDown || this.isHeld("KeyA", "a", "A");
+    const down = this.keys.down.isDown || this.isHeld("KeyS", "s", "S");
+    const up = this.keys.up.isDown || this.isHeld("KeyW", "w", "W");
     const direction = {
-      x: Number(this.keys.right.isDown) - Number(this.keys.left.isDown),
-      y: Number(this.keys.down.isDown) - Number(this.keys.up.isDown),
+      x: Number(right) - Number(left),
+      y: Number(down) - Number(up),
     };
     return {
       direction,
-      sprint: this.keys.shift.isDown,
+      sprint: this.keys.shift.isDown || this.isHeld("ShiftLeft", "ShiftRight", "Shift"),
       interact: Phaser.Input.Keyboard.JustDown(this.keys.interact),
     };
+  }
+
+  private isHeld(...codes: string[]): boolean {
+    return codes.some((code) => this.heldKeys.has(code));
+  }
+
+  private focusCanvas(): void {
+    const canvas = this.game.canvas;
+    canvas.tabIndex = 0;
+    canvas.focus();
   }
 
   private emitNewNoiseRipples(): void {
