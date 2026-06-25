@@ -92,6 +92,8 @@ function mockSceneCollaborators(): void {
       render() {}
       followCamera() {}
       spawnNoiseRipple() {}
+      showPebbleAim() {}
+      hidePebbleAim() {}
     },
   }));
   vi.doMock("../../client/src/ui/Hud", () => ({
@@ -119,14 +121,31 @@ async function createSceneHarness(): Promise<{
   const scene = new GameScene();
   const reports: unknown[] = [];
   const keys: Record<string, { isDown: boolean; justDown?: boolean }> = {};
+  const inputListeners: Record<string, Array<{ callback: (...args: unknown[]) => void; context?: unknown }>> = {};
 
   Object.assign(scene, {
     input: {
+      activePointer: {
+        worldX: 0,
+        worldY: 0,
+        leftButtonDown: () => false,
+      },
       keyboard: {
         addKey: (code: string) => {
           keys[code] = { isDown: false, justDown: false };
           return keys[code];
         },
+      },
+      on(type: string, callback: (...args: unknown[]) => void, context?: unknown) {
+        inputListeners[type] = [...(inputListeners[type] ?? []), { callback, context }];
+      },
+      off(type: string, callback: (...args: unknown[]) => void, context?: unknown) {
+        inputListeners[type] = (inputListeners[type] ?? []).filter(
+          (listener) => listener.callback !== callback || listener.context !== context,
+        );
+      },
+      emit(type: string, ...args: unknown[]) {
+        inputListeners[type]?.forEach((listener) => listener.callback.apply(listener.context, args));
       },
     },
     cameras: {
@@ -184,6 +203,8 @@ function forceCompletedSimulation(scene: GameScene, durationMs: number): void {
       render() {},
       followCamera() {},
       spawnNoiseRipple() {},
+      showPebbleAim() {},
+      hidePebbleAim() {},
     },
     hud: {
       update() {},
