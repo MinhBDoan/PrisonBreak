@@ -10,6 +10,7 @@ export type SimulationInput = {
   direction: Vector;
   sprint: boolean;
   interact: boolean;
+  throwTarget?: Vector | null;
 };
 
 export type HidingSpot = {
@@ -30,6 +31,11 @@ export type ObjectivePoint = {
   position: Vector;
 };
 
+export type Pebble = {
+  id: string;
+  position: Vector;
+};
+
 export type PatrolPoint = Vector & {
   corridor: CorridorId;
 };
@@ -46,6 +52,7 @@ export type PrisonMap = {
   corridors: Record<CorridorId, { minX: number; maxX: number; minY: number; maxY: number }>;
   key: ObjectivePoint;
   exit: ObjectivePoint;
+  pebbles: Pebble[];
   hidingSpots: HidingSpot[];
   coverObjects: CoverObject[];
   patrolRoutes: PatrolRoute[];
@@ -56,6 +63,7 @@ export type PlayerState = {
   position: Vector;
   hasKey: boolean;
   hiddenIn: string | null;
+  pebbles: number;
 };
 
 export type GuardStateSnapshot = {
@@ -86,6 +94,7 @@ export type SimulationSnapshot = {
     hasKey: boolean;
     exitUnlocked: boolean;
   };
+  pebbles: Array<Pebble & { collected: boolean }>;
   completed: { outcome: RunOutcome; durationMs: number } | null;
   adaptations: AppliedAdaptations;
 };
