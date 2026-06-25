@@ -14,6 +14,20 @@ export const RunEventSchema = z.object({
     "key_collected",
     "escape",
     "capture",
+    "death",
+    "weapon_pickup",
+    "weapon_swap",
+    "attack",
+    "reload",
+    "damage_dealt",
+    "damage_taken",
+    "knockout",
+    "kill",
+    "body_discovered",
+    "guard_wakeup",
+    "heal",
+    "alert_changed",
+    "armed_response_triggered",
   ]),
   atMs: z.number().nonnegative(),
   position: PositionSchema,
@@ -22,7 +36,7 @@ export const RunEventSchema = z.object({
 
 export type RunEvent = z.infer<typeof RunEventSchema>;
 
-export const RunOutcomeSchema = z.enum(["escape", "capture"]);
+export const RunOutcomeSchema = z.enum(["escape", "capture", "death"]);
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 
 export const BehaviorSummarySchema = z.object({
