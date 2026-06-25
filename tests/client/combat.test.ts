@@ -89,13 +89,14 @@ describe("combat weapons and inventory", () => {
   });
 
   it("baton knocks out when stun exceeds remaining hp pressure", () => {
+    const targetHp = 30;
     const result = resolveAttack({
       attackerId: "player",
       targetId: "guard-1",
       weaponId: "baton",
       attackerPosition: { x: 0, y: 0 },
       targetPosition: { x: 0.5, y: 0 },
-      targetHealth: { entityId: "guard-1", hp: 30, maxHp: 100, isDown: false },
+      targetHealth: { entityId: "guard-1", hp: targetHp, maxHp: 100, isDown: false },
       moving: false,
       lineOfFireBlocked: false,
     });
@@ -105,11 +106,30 @@ describe("combat weapons and inventory", () => {
       targetId: "guard-1",
       weaponId: "baton",
       hit: true,
-      damage: weapons.baton.damage,
+      damage: targetHp,
       stun: weapons.baton.stun,
       noise: 22,
       bodyState: "knocked_out",
     });
+  });
+
+  it("baton hit stays active and deals weapon damage when stun does not overwhelm target", () => {
+    const result = resolveAttack({
+      attackerId: "player",
+      targetId: "guard-1",
+      weaponId: "baton",
+      attackerPosition: { x: 0, y: 0 },
+      targetPosition: { x: 0.5, y: 0 },
+      targetHealth: { entityId: "guard-1", hp: 40, maxHp: 100, isDown: false },
+      moving: false,
+      lineOfFireBlocked: false,
+    });
+
+    expect(result.hit).toBe(true);
+    expect(result.damage).toBe(weapons.baton.damage);
+    expect(result.stun).toBe(weapons.baton.stun);
+    expect(result.noise).toBe(weapons.baton.noise);
+    expect(result.bodyState).toBe("active");
   });
 
   it("makeshift knife misses outside melee range", () => {

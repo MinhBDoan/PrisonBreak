@@ -30,6 +30,24 @@ function resolveBodyState({
   return weapon.lethal ? "dead" : "knocked_out";
 }
 
+function resolveDamage({
+  weaponId,
+  targetHealth,
+  bodyState,
+}: {
+  weaponId: WeaponId;
+  targetHealth: HealthState;
+  bodyState: BodyState;
+}): number {
+  const weaponDamage = weapons[weaponId].damage;
+
+  if (bodyState === "active") {
+    return weaponDamage;
+  }
+
+  return Math.max(weaponDamage, targetHealth.hp);
+}
+
 export function resolveAttack(input: ResolveAttackInput): CombatResult {
   const weapon = weapons[input.weaponId];
   const hit = calculateHit({
@@ -53,17 +71,23 @@ export function resolveAttack(input: ResolveAttackInput): CombatResult {
     };
   }
 
+  const bodyState = resolveBodyState({
+    weaponId: input.weaponId,
+    targetHealth: input.targetHealth,
+  });
+
   return {
     attackerId: input.attackerId,
     targetId: input.targetId,
     weaponId: input.weaponId,
     hit: true,
-    damage: weapon.damage,
-    stun: weapon.stun,
-    noise: weapon.noise,
-    bodyState: resolveBodyState({
+    damage: resolveDamage({
       weaponId: input.weaponId,
       targetHealth: input.targetHealth,
+      bodyState,
     }),
+    stun: weapon.stun,
+    noise: weapon.noise,
+    bodyState,
   };
 }
