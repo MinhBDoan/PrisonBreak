@@ -36,6 +36,16 @@ describe("createHudModel", () => {
     expect(model.banner).toEqual({ text: "Dead", tone: "danger" });
   });
 
+  it("keeps legacy capture completions out of player-facing loss language", () => {
+    const simulation = new GameSimulation();
+    const snapshot = simulation.getSnapshot();
+    snapshot.completed = { outcome: "capture", durationMs: 1200 };
+
+    const model = createHudModel(snapshot);
+
+    expect(model.banner).toEqual({ text: "Run Ended", tone: "danger" });
+  });
+
   it("escapes HUD strings before rendering to the DOM", () => {
     const simulation = new GameSimulation();
     const snapshot = simulation.getSnapshot();

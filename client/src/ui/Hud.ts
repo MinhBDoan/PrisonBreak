@@ -70,7 +70,7 @@ function bannerFor(snapshot: SimulationSnapshot): HudBanner {
     return { text: "Dead", tone: "danger" };
   }
   if (snapshot.completed?.outcome === "capture") {
-    return { text: "Captured", tone: "danger" };
+    return { text: "Run Ended", tone: "danger" };
   }
   const mostAlertGuard = snapshot.guards.reduce((best, guard) => (guard.suspicion > best.suspicion ? guard : best));
   if (mostAlertGuard.state === "chase") {
@@ -220,7 +220,7 @@ export class Hud {
       <section class="menu-card">
         <p class="hud__eyebrow">Adaptive Prison Break</p>
         <h1>Prison Wing Vertical Slice</h1>
-        <p>Slip through patrols, steal the key, and escape before suspicion turns into capture.</p>
+        <p>Slip through patrols, steal the key, and survive long enough to escape.</p>
         <button class="primary-action" type="button">Begin Run</button>
       </section>
     `;
@@ -260,7 +260,7 @@ export class Hud {
   }
 
   showReportLoading(outcome: RunOutcome): void {
-    const outcomeLabel = outcome === "escape" ? "Escaped" : outcome === "death" ? "Death" : "Captured";
+    const outcomeLabel = outcome === "escape" ? "Escaped" : outcome === "death" ? "Death" : "Run Ended";
     this.root.innerHTML = `
       <section class="menu-card report-card">
         <p class="hud__eyebrow">Run ${outcomeLabel}</p>
@@ -280,7 +280,7 @@ export class Hud {
     this.root.innerHTML = `
       <section class="menu-card report-card">
         <p class="hud__eyebrow">Intelligence Report</p>
-        <h1>${response.outcome === "escape" ? "Escape Logged" : response.outcome === "death" ? "Death Logged" : "Capture Logged"}</h1>
+        <h1>${response.outcome === "escape" ? "Escape Logged" : response.outcome === "death" ? "Death Logged" : "Run Logged"}</h1>
         <p>${escapeHtml(response.report.rationale)}</p>
         <div class="report-card__section">
           <strong>Learned habit</strong>

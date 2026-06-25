@@ -20,7 +20,7 @@ The initial run has two patrol guards. A reserve third guard can be activated by
 
 The player uses WASD to move, Shift to sprint, E to interact, and left mouse to aim and throw pebbles when available. Interactions include collecting the key, entering or leaving dedicated hiding spots, and unlocking the exit. Normal cover works by breaking guard line of sight; dedicated hiding spots provide stronger concealment but can become learned inspection targets.
 
-Sprint movement generates more noise. Punches and knives are quieter combat options, heavier melee weapons make more sound, and military guns are loud, ammo-limited, and more likely to escalate armed response. Knocked-out guards stay down until another guard discovers and wakes them. Guard vision cones remain hidden while guards are unaware, then appear during suspicion, search, and chase. The player loses when HP reaches zero. Escape, capture from legacy service flows, or death ends the run.
+Sprint movement generates more noise. Punches and knives are quieter combat options, heavier melee weapons make more sound, and military guns are loud, ammo-limited, and more likely to escalate armed response. Knocked-out guards stay down until another guard discovers and wakes them. Guard vision cones remain hidden while guards are unaware, then appear during suspicion, search, and chase. Live gameplay ends by escape or HP-depletion death; capture remains only as a legacy service outcome.
 
 ## Adaptive Learning Loop
 
@@ -31,10 +31,10 @@ Each run records:
 - Player route and tile heatmap events
 - Hiding-spot entries and duration
 - Sprint and noise events
-- Guard detections and capture progress
+- Guard detections and chase pressure
 - Combat attacks, knockouts, kills, body discoveries, healing, and armed response triggers
 - Key collection
-- Escape, capture, or death outcome
+- Escape or death outcome, with legacy capture records still accepted by the service
 
 After a run, deterministic analytics summarize recent and historical behavior. Recent runs receive greater weight, allowing old habits to decay when the player consistently changes strategy.
 
@@ -66,7 +66,7 @@ Gameplay state remains outside Phaser scenes. Scenes render state and translate 
 - `ReportScene`: displays the intelligence report and blocks progression until adaptation succeeds.
 - `GameSimulation`: owns run state and coordinates gameplay systems.
 - `GuardFSM`: handles patrol, investigate, search, chase, and return states.
-- `DetectionSystem`: calculates line of sight, cover, suspicion, and capture progress.
+- `DetectionSystem`: calculates line of sight, cover, suspicion, and chase pressure.
 - `NoiseSystem`: emits movement noise and applies current sensitivity adaptations.
 - `HidingSystem`: handles lockers, shadow zones, and learned inspections.
 - `WeaponSystem`, `CombatSystem`, `ProjectileSystem`, `HealthSystem`, `BodySystem`, and `AlertSystem`: handle weapons, hit resolution, HP, incapacitated bodies, discovery, wakeups, and staged combat pressure.

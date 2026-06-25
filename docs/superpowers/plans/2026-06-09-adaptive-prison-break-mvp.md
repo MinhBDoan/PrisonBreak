@@ -263,7 +263,7 @@ Commit: `git add shared service tests && git commit -m "feat: add adaptive run l
 
 - [ ] **Step 1: Write failing deterministic simulation tests**
 
-Test wall collision, key collection, exit unlocking, line-of-sight cover, suspicion-to-chase transition, capture threshold, sprint noise, locker concealment, learned locker inspection, and escape completion.
+Test wall collision, key collection, exit unlocking, line-of-sight cover, suspicion-to-chase transition, HP-only loss, sprint noise, locker concealment, learned locker inspection, and escape completion.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -324,7 +324,7 @@ Run: `npm test && npm run build`
 Expected: PASS.
 
 Run: `npm run dev:client`
-Expected: the map renders and a complete escape/capture/death loop is playable.
+Expected: the map renders and a complete escape/death loop is playable.
 
 - [ ] **Step 6: Commit**
 
@@ -355,7 +355,7 @@ Validate every service response with shared Zod schemas. Expose `ready()`, `star
 
 - [ ] **Step 4: Implement report and retry flow**
 
-On escape, capture, or death, submit events once using a generated idempotency key. Display outcome, learned habit, adaptation, recent trend, and `Begin Next Run`. On failure, display the error and Retry action without permitting the next run.
+On escape or death in live gameplay, submit events once using a generated idempotency key. Legacy capture completions remain accepted by the service. Display outcome, learned habit, adaptation, recent trend, and `Begin Next Run`. On failure, display the error and Retry action without permitting the next run.
 
 - [ ] **Step 5: Verify and commit**
 
@@ -389,7 +389,7 @@ Expected: all tests pass, TypeScript reports no errors, and both client and serv
 
 Start client and service, then verify:
 
-- Run 1 can end by escape, capture, or HP-depletion death in under five minutes.
+- Run 1 can end by escape or HP-depletion death in under five minutes.
 - The report blocks until Codex returns a valid action.
 - Run 2 visibly applies the selected adaptation.
 - Cover, three hiding spots, vision-cone reveal, noise ripples, key, and exit are readable.
