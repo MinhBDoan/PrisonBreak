@@ -73,6 +73,8 @@ export interface HealthState {
   isDown: boolean;
 }
 
+export type BodyState = "active" | "knocked_out" | "dead";
+
 export type GuardStateSnapshot = {
   id: string;
   position: Vector;
@@ -160,4 +162,15 @@ export interface WeaponState {
   reserveAmmoByType: Record<AmmoType, number>;
   reload: { weaponId: WeaponId; remainingMs: number } | null;
   healingItems: number;
+}
+
+export interface CombatResult {
+  attackerId: string;
+  targetId: string;
+  weaponId: WeaponId;
+  hit: boolean;
+  damage: number;
+  stun: number;
+  noise: number;
+  bodyState: BodyState;
 }

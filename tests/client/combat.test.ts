@@ -6,6 +6,7 @@ import {
   startReload,
   tickReload,
 } from "../../client/src/game/WeaponSystem";
+import { resolveAttack } from "../../client/src/game/CombatSystem";
 import { weapons } from "../../client/src/game/weapons";
 
 describe("combat weapons and inventory", () => {
@@ -85,5 +86,86 @@ describe("combat weapons and inventory", () => {
       weaponId: "pistol",
       remainingMs: weapons.pistol.reloadMs - 300,
     });
+  });
+
+  it("baton knocks out when stun exceeds remaining hp pressure", () => {
+    const result = resolveAttack({
+      attackerId: "player",
+      targetId: "guard-1",
+      weaponId: "baton",
+      attackerPosition: { x: 0, y: 0 },
+      targetPosition: { x: 0.5, y: 0 },
+      targetHealth: { entityId: "guard-1", hp: 30, maxHp: 100, isDown: false },
+      moving: false,
+      lineOfFireBlocked: false,
+    });
+
+    expect(result).toEqual({
+      attackerId: "player",
+      targetId: "guard-1",
+      weaponId: "baton",
+      hit: true,
+      damage: weapons.baton.damage,
+      stun: weapons.baton.stun,
+      noise: 22,
+      bodyState: "knocked_out",
+    });
+  });
+
+  it("makeshift knife misses outside melee range", () => {
+    const result = resolveAttack({
+      attackerId: "player",
+      targetId: "guard-1",
+      weaponId: "makeshift_knife",
+      attackerPosition: { x: 0, y: 0 },
+      targetPosition: { x: 2, y: 0 },
+      targetHealth: { entityId: "guard-1", hp: 100, maxHp: 100, isDown: false },
+      moving: false,
+      lineOfFireBlocked: false,
+    });
+
+    expect(result.hit).toBe(false);
+    expect(result.damage).toBe(0);
+    expect(result.stun).toBe(0);
+    expect(result.noise).toBe(8);
+    expect(result.bodyState).toBe("active");
+  });
+
+  it("pistol gunshot with blocked line of fire misses but still reports noise", () => {
+    const result = resolveAttack({
+      attackerId: "player",
+      targetId: "guard-1",
+      weaponId: "pistol",
+      attackerPosition: { x: 0, y: 0 },
+      targetPosition: { x: 4, y: 0 },
+      targetHealth: { entityId: "guard-1", hp: 100, maxHp: 100, isDown: false },
+      moving: false,
+      lineOfFireBlocked: true,
+    });
+
+    expect(result.hit).toBe(false);
+    expect(result.damage).toBe(0);
+    expect(result.stun).toBe(0);
+    expect(result.noise).toBe(70);
+    expect(result.bodyState).toBe("active");
+  });
+
+  it("lethal weapon returns dead when damage drops target hp to zero", () => {
+    const result = resolveAttack({
+      attackerId: "player",
+      targetId: "guard-1",
+      weaponId: "pipe",
+      attackerPosition: { x: 0, y: 0 },
+      targetPosition: { x: 0.5, y: 0 },
+      targetHealth: { entityId: "guard-1", hp: 32, maxHp: 100, isDown: false },
+      moving: false,
+      lineOfFireBlocked: false,
+    });
+
+    expect(result.hit).toBe(true);
+    expect(result.damage).toBe(weapons.pipe.damage);
+    expect(result.stun).toBe(weapons.pipe.stun);
+    expect(result.noise).toBe(weapons.pipe.noise);
+    expect(result.bodyState).toBe("dead");
   });
 });
