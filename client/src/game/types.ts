@@ -102,3 +102,46 @@ export type SimulationOptions = {
 };
 
 export type RunEventDraft = Omit<RunEvent, "atMs">;
+
+export type WeaponSlot = "fists" | "melee" | "sidearm" | "primary";
+export type WeaponKind = "unarmed" | "melee" | "gun";
+export type AmmoType = "none" | "nine_mm" | "shells" | "rifle";
+export type WeaponId =
+  | "fists"
+  | "makeshift_knife"
+  | "baton"
+  | "bat"
+  | "pipe"
+  | "pistol"
+  | "smg"
+  | "shotgun"
+  | "assault_rifle"
+  | "suppressed_pistol";
+
+export interface WeaponStats {
+  id: WeaponId;
+  label: string;
+  slot: WeaponSlot;
+  kind: WeaponKind;
+  ammoType: AmmoType;
+  damage: number;
+  stun: number;
+  range: number;
+  attackMs: number;
+  noise: number;
+  lethal: boolean;
+  magazineSize: number;
+  reloadMs: number;
+  recoil: number;
+  movingAccuracyPenalty: number;
+}
+
+export interface WeaponState {
+  meleeWeaponId: WeaponId;
+  primaryGunId: WeaponId | null;
+  sidearmId: WeaponId | null;
+  ammoByWeapon: Partial<Record<WeaponId, number>>;
+  reserveAmmoByType: Record<AmmoType, number>;
+  reload: { weaponId: WeaponId; remainingMs: number } | null;
+  healingItems: number;
+}
