@@ -18,6 +18,24 @@ function nextLevel(level: AlertLevel): AlertLevel {
   return alertOrder[Math.min(alertOrder.length - 1, index + 1)];
 }
 
+function stageEscalation(currentLevel: AlertLevel, pressure: number): AlertLevel {
+  const pressureLevel = levelForPressure(pressure);
+  const currentIndex = alertOrder.indexOf(currentLevel);
+  const pressureIndex = alertOrder.indexOf(pressureLevel);
+
+  if (pressureIndex <= currentIndex) {
+    return currentLevel;
+  }
+
+  return pressureIndex > currentIndex + 1 ? nextLevel(currentLevel) : pressureLevel;
+}
+
+function stageCooling(currentLevel: AlertLevel, pressure: number): AlertLevel {
+  const pressureLevel = levelForPressure(pressure);
+
+  return alertOrder.indexOf(pressureLevel) < alertOrder.indexOf(currentLevel) ? pressureLevel : currentLevel;
+}
+
 export function createAlertState(): AlertState {
   return {
     level: "calm",
@@ -55,10 +73,7 @@ export function withPressure(state: AlertState, pressure: number): AlertState {
 
 export function registerNoise(state: AlertState, noise: number): AlertState {
   const pressure = clampPressure(state.pressure + Math.max(0, noise) / 2);
-  const pressureLevel = levelForPressure(pressure);
-  const stagedLevel = alertOrder.indexOf(pressureLevel) > alertOrder.indexOf(nextLevel(state.level))
-    ? nextLevel(state.level)
-    : pressureLevel;
+  const stagedLevel = stageEscalation(state.level, pressure);
 
   return {
     level: stagedLevel,
@@ -69,9 +84,23 @@ export function registerNoise(state: AlertState, noise: number): AlertState {
 
 export function registerBodyDiscovery(state: AlertState, bodyState: Exclude<BodyState, "active">): AlertState {
   const pressureIncrease = bodyState === "dead" ? 35 : 18;
-  return withPressure(state, state.pressure + pressureIncrease);
+  const pressure = clampPressure(state.pressure + pressureIncrease);
+  const stagedLevel = stageEscalation(state.level, pressure);
+
+  return {
+    level: stagedLevel,
+    pressure,
+    armedResponseTriggered: state.armedResponseTriggered || reachedArmedResponse(stagedLevel),
+  };
 }
 
 export function tickAlert(state: AlertState, deltaMs: number): AlertState {
-  return withPressure(state, state.pressure - Math.max(0, deltaMs) * 0.004);
+  const pressure = clampPressure(state.pressure - Math.max(0, deltaMs) * 0.004);
+  const stagedLevel = stageCooling(state.level, pressure);
+
+  return {
+    level: stagedLevel,
+    pressure,
+    armedResponseTriggered: state.armedResponseTriggered || reachedArmedResponse(stagedLevel),
+  };
 }

@@ -10,6 +10,7 @@ import {
   registerBodyDiscovery,
   registerNoise,
   tickAlert,
+  withPressure,
 } from "../../client/src/game/AlertSystem";
 
 describe("body system", () => {
@@ -60,7 +61,8 @@ describe("alert system", () => {
 
     expect(afterKnockout.pressure).toBe(18);
     expect(afterDead.pressure).toBe(35);
-    expect(afterDead.level).toBe("alert");
+    expect(afterDead.pressure).toBeGreaterThan(afterKnockout.pressure);
+    expect(afterDead.level).toBe("suspicious");
     expect(afterKnockout.level).toBe("suspicious");
   });
 
@@ -74,6 +76,28 @@ describe("alert system", () => {
     expect(third.level).toBe("armed_response");
     expect(third.pressure).toBe(100);
     expect(third.level).not.toBe("lockdown_pressure");
+  });
+
+  it("does not promote staged armed response to lockdown on a cooling tick", () => {
+    const armed = registerNoise(registerNoise(registerNoise(createAlertState(), 70), 70), 70);
+    const sameFrame = tickAlert(armed, 0);
+    const nextFrame = tickAlert(armed, 100);
+
+    expect(armed.level).toBe("armed_response");
+    expect(sameFrame.pressure).toBe(100);
+    expect(sameFrame.level).toBe("armed_response");
+    expect(nextFrame.pressure).toBe(99.6);
+    expect(nextFrame.level).toBe("armed_response");
+  });
+
+  it("stages dead body discovery from high pressure without jumping straight to lockdown", () => {
+    const alert = withPressure(createAlertState(), 55);
+    const discovered = registerBodyDiscovery(alert, "dead");
+
+    expect(alert.level).toBe("alert");
+    expect(discovered.pressure).toBe(90);
+    expect(discovered.level).toBe("armed_response");
+    expect(discovered.level).not.toBe("lockdown_pressure");
   });
 
   it("cools down when avoiding trouble", () => {
