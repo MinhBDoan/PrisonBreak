@@ -9,8 +9,7 @@ describe("combat run contracts", () => {
         atMs: 500,
         position: { x: 3, y: 6 },
         payload: {
-          targetX: 8,
-          targetY: 6,
+          landing: { x: 8, y: 6 },
         },
       }).type,
     ).toBe("pebble_throw");
