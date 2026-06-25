@@ -11,6 +11,9 @@ export type SimulationInput = {
   sprint: boolean;
   interact: boolean;
   throwTarget?: Vector | null;
+  attack?: "melee" | "gun" | null;
+  heal?: boolean;
+  reload?: boolean;
 };
 
 export type HidingSpot = {
@@ -113,6 +116,12 @@ export type AppliedAdaptations = {
   inspectHidingSpots: Record<string, number>;
   noiseSensitivity: number;
   reserveGuardActive: boolean;
+  bodyCheckLevel: number;
+  armedResponseLevel: number;
+  guardCoverLevel: number;
+  guardDurabilityLevel: number;
+  ammoReductionLevel: number;
+  meleeCautionLevel: number;
 };
 
 export type SimulationSnapshot = {

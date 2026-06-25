@@ -81,6 +81,10 @@ npm test -- tests/service/combat-analytics.test.ts
 - `WASD`: move
 - `Shift`: sprint
 - `E`: interact with the key, exit, lockers, and shadow hiding spot
+- `1`: melee attack nearest guard in range
+- `2`: fire equipped gun at nearest guard in range
+- `R`: reload equipped gun
+- `F`: use a healing item
 - Left mouse: aim and throw a pebble when carrying one
 
 The objective is to collect the security key, reach the locked exit, and escape. Stealth remains the cleanest route: running, weapon noise, discovered bodies, and gunfire raise pressure. The player has health and loses the run when HP reaches zero.

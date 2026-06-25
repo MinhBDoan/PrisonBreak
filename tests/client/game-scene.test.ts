@@ -312,6 +312,32 @@ describe("GameScene", () => {
     }));
   });
 
+  it("maps combat hotkeys into simulation input", async () => {
+    const { scene } = await createSceneHarness();
+
+    startRun(scene, 1);
+    const simulation = (scene as unknown as { simulation: { step: (input: unknown) => void } }).simulation;
+    const stepSpy = vi.spyOn(simulation, "step");
+
+    windowListeners.keydown?.forEach((listener) => listener({ code: "Digit2", key: "2" }));
+    windowListeners.keydown?.forEach((listener) => listener({ code: "KeyR", key: "r" }));
+    windowListeners.keydown?.forEach((listener) => listener({ code: "KeyF", key: "f" }));
+    scene.update();
+
+    expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      attack: "gun",
+      reload: true,
+      heal: true,
+    }));
+
+    scene.update();
+    expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      attack: null,
+      reload: false,
+      heal: false,
+    }));
+  });
+
   it("charges and submits pebble throw targets through pointer input", async () => {
     const { scene } = await createSceneHarness();
 

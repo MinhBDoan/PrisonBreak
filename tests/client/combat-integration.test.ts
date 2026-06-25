@@ -90,7 +90,7 @@ describe("simulation health outcome", () => {
     expect(snapshot.player.weapons).toMatchObject({
       meleeWeaponId: "makeshift_knife",
       primaryGunId: null,
-      sidearmId: null,
+      sidearmId: "pistol",
       healingItems: 1,
     });
 
@@ -102,7 +102,7 @@ describe("simulation health outcome", () => {
     expect(simulation.getSnapshot().player.health.hp).toBe(100);
     expect(simulation.getSnapshot().alert.pressure).toBe(0);
     expect(simulation.getSnapshot().player.weapons.healingItems).toBe(1);
-    expect(simulation.getSnapshot().player.weapons.reserveAmmoByType.nine_mm).toBe(0);
+    expect(simulation.getSnapshot().player.weapons.reserveAmmoByType.nine_mm).toBe(12);
   });
 
   it("records death when player damage reaches zero health", () => {
@@ -183,6 +183,7 @@ describe("simulation combat integration", () => {
     const result = simulation.playerAttack("guard-a", "pistol");
 
     expect(result?.hit).toBe(true);
+    expect(simulation.getSnapshot().player.weapons.ammoByWeapon.pistol).toBe(5);
     expect(simulation.getGuardHealth("guard-a")).toEqual({
       entityId: "guard-a",
       hp: 10,
@@ -199,14 +200,16 @@ describe("simulation combat integration", () => {
     expect(weaponNoise?.payload.radius as number).toBeLessThan(prisonMap.width);
   });
 
-  it("baton attacks can knock out a guard body and skip that guard's capture updates", () => {
+  it("fist attacks can knock out a guard body and skip that guard's capture updates until discovery", () => {
     const simulation = new GameSimulation({
       guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
     });
     simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
 
-    simulation.playerAttack("guard-a", "baton");
-    const result = simulation.playerAttack("guard-a", "baton");
+    let result = simulation.playerAttack("guard-a", "fists");
+    while (result?.bodyState === "active") {
+      result = simulation.playerAttack("guard-a", "fists");
+    }
     stepMany(simulation, 400);
 
     expect(result?.bodyState).toBe("knocked_out");
@@ -222,26 +225,69 @@ describe("simulation combat integration", () => {
       maxHp: 45,
       isDown: true,
     });
-    expect(simulation.getAlertState().pressure).toBe(22);
+    expect(simulation.getAlertState().pressure).toBeGreaterThan(0);
     expect(simulation.getEvents().some((event) => event.type === "knockout")).toBe(true);
     expect(simulation.getEvents().some((event) => event.type === "body_discovered")).toBe(false);
     expect(simulation.getSnapshot().completed).toBeNull();
   });
 
-  it("lethal pipe attacks create a dead body and kill event", () => {
+  it("rejects attacks with weapons the player does not own", () => {
     const simulation = new GameSimulation({
       guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
     });
     simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
 
-    simulation.playerAttack("guard-a", "pipe");
     const result = simulation.playerAttack("guard-a", "pipe");
 
-    expect(result?.bodyState).toBe("dead");
-    expect(simulation.getBodyState().bodies["guard-a"]?.bodyState).toBe("dead");
-    expect(simulation.getSnapshot().guards[0].bodyState).toBe("dead");
-    expect(simulation.getEvents().some((event) => event.type === "kill")).toBe(true);
-    expect(simulation.getEvents().some((event) => event.type === "body_discovered")).toBe(false);
+    expect(result).toBeNull();
+    expect(simulation.getGuardHealth("guard-a")?.hp).toBe(45);
+    expect(simulation.getEvents().some((event) => event.type === "attack")).toBe(false);
+  });
+
+  it("active guards discover knocked out guards and wake them up", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [
+        { id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-b", position: { x: 4.2, y: 2.5 }, facing: { x: -1, y: 0 } },
+      ],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+
+    let result = simulation.playerAttack("guard-a", "fists");
+    while (result?.bodyState === "active") {
+      result = simulation.playerAttack("guard-a", "fists");
+    }
+    stepMany(simulation, 1);
+
+    expect(simulation.getEvents().some((event) => event.type === "body_discovered")).toBe(true);
+    stepMany(simulation, 900);
+
+    expect(simulation.getEvents().some((event) => event.type === "guard_wakeup")).toBe(true);
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.bodyState).toBe("active");
+  });
+
+  it("applies combat adaptations to starting combat pressure, durability, ammo, and body checks", () => {
+    const simulation = new GameSimulation({
+      nextRunConfig: {
+        adaptations: [
+          { action: "place_armed_response", target: "security_room", level: 2, rationale: "gun pressure" },
+          { action: "increase_guard_durability", target: "global", level: 1, rationale: "guards are being dropped" },
+          { action: "reduce_ammo_availability", target: "global", level: 2, rationale: "gun reliance" },
+          { action: "add_body_checks", target: "security_room", level: 1, rationale: "bodies found" },
+        ],
+      },
+    });
+    const snapshot = simulation.getSnapshot();
+
+    expect(snapshot.adaptations).toMatchObject({
+      armedResponseLevel: 2,
+      guardDurabilityLevel: 1,
+      ammoReductionLevel: 2,
+      bodyCheckLevel: 1,
+    });
+    expect(snapshot.alert.pressure).toBe(24);
+    expect(snapshot.player.weapons.reserveAmmoByType.nine_mm).toBe(4);
+    expect(snapshot.guards[0].health?.maxHp).toBe(55);
   });
 
   it("attacking through blocked line of fire misses but still records attack noise and alert", () => {

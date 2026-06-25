@@ -94,8 +94,10 @@ describe("GameRenderer", () => {
       guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
     });
     simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
-    simulation.playerAttack("guard-a", "baton");
-    simulation.playerAttack("guard-a", "baton");
+    let result = simulation.playerAttack("guard-a", "fists");
+    while (result?.bodyState === "active") {
+      result = simulation.playerAttack("guard-a", "fists");
+    }
     const renderer = new GameRenderer();
 
     const guard = renderer.describe(simulation.getSnapshot()).guards[0];

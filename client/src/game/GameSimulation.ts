@@ -1,6 +1,6 @@
 import type { ActiveAdaptation, RunEvent, RunOutcome } from "../../../shared/contracts";
-import { createAlertState, registerNoise } from "./AlertSystem";
-import { addBody, createBodyState } from "./BodySystem";
+import { createAlertState, registerBodyDiscovery, registerNoise, withPressure } from "./AlertSystem";
+import { addBody, createBodyState, discoverBody, wakeGuard } from "./BodySystem";
 import { resolveAttack } from "./CombatSystem";
 import { DetectionSystem } from "./DetectionSystem";
 import { GuardFSM, type GuardRuntime } from "./GuardFSM";
@@ -10,7 +10,7 @@ import { collidesWithSolidObjects, corridorAt, isWall, prisonMap } from "./map";
 import { NoiseSystem, type NoiseEvent } from "./NoiseSystem";
 import { ObjectiveSystem } from "./ObjectiveSystem";
 import { RunEventCollector } from "./RunEventCollector";
-import { createInitialWeaponState } from "./WeaponSystem";
+import { addReserveAmmo, createInitialWeaponState, pickupWeapon, startReload, tickReload } from "./WeaponSystem";
 import type {
   AppliedAdaptations,
   AlertState,
@@ -49,11 +49,20 @@ const pebbleFlightMs = 300;
 const guardContactDamage = 20;
 const guardContactCooldownMs = 1000;
 const guardContactRange = 0.5;
+const bodyDiscoveryRange = 3.2;
+const bodyWakeDelayMs = 800;
+const healingAmount = 35;
 
 type PendingPebbleImpact = {
   origin: Vector;
   landing: Vector;
   impactAtMs: number;
+};
+
+type PendingWakeup = {
+  guardId: string;
+  wokenBy: string;
+  wakeAtMs: number;
 };
 
 function normalize(vector: Vector): Vector {
@@ -133,6 +142,12 @@ function buildAdaptations(adaptations: ActiveAdaptation[] = []): AppliedAdaptati
     inspectHidingSpots: {},
     noiseSensitivity: 0,
     reserveGuardActive: false,
+    bodyCheckLevel: 0,
+    armedResponseLevel: 0,
+    guardCoverLevel: 0,
+    guardDurabilityLevel: 0,
+    ammoReductionLevel: 0,
+    meleeCautionLevel: 0,
   };
 
   for (const adaptation of adaptations) {
@@ -148,6 +163,24 @@ function buildAdaptations(adaptations: ActiveAdaptation[] = []): AppliedAdaptati
     }
     if (adaptation.action === "activate_reserve_guard") {
       applied.reserveGuardActive = adaptation.level > 0;
+    }
+    if (adaptation.action === "add_body_checks") {
+      applied.bodyCheckLevel = Math.max(applied.bodyCheckLevel, adaptation.level);
+    }
+    if (adaptation.action === "place_armed_response") {
+      applied.armedResponseLevel = Math.max(applied.armedResponseLevel, adaptation.level);
+    }
+    if (adaptation.action === "improve_guard_cover") {
+      applied.guardCoverLevel = Math.max(applied.guardCoverLevel, adaptation.level);
+    }
+    if (adaptation.action === "increase_guard_durability") {
+      applied.guardDurabilityLevel = Math.max(applied.guardDurabilityLevel, adaptation.level);
+    }
+    if (adaptation.action === "reduce_ammo_availability") {
+      applied.ammoReductionLevel = Math.max(applied.ammoReductionLevel, adaptation.level);
+    }
+    if (adaptation.action === "increase_melee_caution") {
+      applied.meleeCautionLevel = Math.max(applied.meleeCautionLevel, adaptation.level);
     }
   }
 
@@ -195,6 +228,7 @@ export class GameSimulation {
   private bodyState = createBodyState();
   private readonly collectedPebbles = new Set<string>();
   private readonly pendingPebbleImpacts: PendingPebbleImpact[] = [];
+  private readonly pendingWakeups: PendingWakeup[] = [];
   private readonly guardContactCooldowns = new Map<string, number>();
   private timeMs = 0;
   private completed: { outcome: RunOutcome; durationMs: number } | null = null;
@@ -211,8 +245,13 @@ export class GameSimulation {
       GuardFSM.createInitialGuards(this.map, this.adaptations),
       options.guardOverrides ?? [],
     );
+    this.playerWeapons = pickupWeapon(this.playerWeapons, "pistol");
+    this.playerWeapons = addReserveAmmo(this.playerWeapons, "nine_mm", Math.max(0, 12 - this.adaptations.ammoReductionLevel * 4));
+    if (this.adaptations.armedResponseLevel > 0) {
+      this.alertState = withPressure(this.alertState, this.adaptations.armedResponseLevel * 12);
+    }
     for (const guard of this.guards) {
-      this.guardHealth.set(guard.id, createHealthState(guard.id, 45));
+      this.guardHealth.set(guard.id, createHealthState(guard.id, 45 + this.adaptations.guardDurabilityLevel * 10));
     }
   }
 
@@ -222,6 +261,7 @@ export class GameSimulation {
     }
 
     this.timeMs += stepMs;
+    this.playerWeapons = tickReload(this.playerWeapons, stepMs);
     this.movePlayer(input);
     if (input.interact) {
       this.interact(input.direction);
@@ -229,7 +269,17 @@ export class GameSimulation {
     if (input.throwTarget) {
       this.throwPebble(input.throwTarget);
     }
+    if (input.reload) {
+      this.reloadEquippedGun();
+    }
+    if (input.heal) {
+      this.useHealingItem();
+    }
+    if (input.attack) {
+      this.attackNearestGuard(input.attack);
+    }
     this.resolvePebbleImpacts();
+    this.resolvePendingWakeups();
 
     this.updateLearnedInspections();
     for (const guard of this.guards) {
@@ -252,6 +302,7 @@ export class GameSimulation {
       }
       this.guardFsm.updateAwareness(guard, canSeePlayer, this.player.position, this.timeMs);
       this.applyGuardContactPressure(guard, canSeePlayer);
+      this.discoverNearbyBodies(guard);
     }
   }
 
@@ -265,6 +316,11 @@ export class GameSimulation {
     }
 
     this.playerHealth = applyDamage(this.playerHealth, amount);
+    this.events.record(this.timeMs, {
+      type: "damage_taken",
+      position: { ...this.player.position },
+      payload: { amount, hp: this.playerHealth.hp, maxHp: this.playerHealth.maxHp },
+    });
     if (this.playerHealth.isDown) {
       this.complete("death");
     }
@@ -302,12 +358,17 @@ export class GameSimulation {
       return null;
     }
 
+    if (!this.canUseWeapon(weaponId)) {
+      return null;
+    }
+
     const target = this.guards.find((guard) => guard.id === targetGuardId);
     const targetHealth = this.guardHealth.get(targetGuardId);
     if (!target || !targetHealth) {
       return null;
     }
 
+    this.consumeAttackAmmo(weaponId);
     this.events.record(this.timeMs, {
       type: "attack",
       position: { ...this.player.position },
@@ -399,8 +460,160 @@ export class GameSimulation {
         inspectHidingSpots: { ...this.adaptations.inspectHidingSpots },
         noiseSensitivity: this.adaptations.noiseSensitivity,
         reserveGuardActive: this.adaptations.reserveGuardActive,
+        bodyCheckLevel: this.adaptations.bodyCheckLevel,
+        armedResponseLevel: this.adaptations.armedResponseLevel,
+        guardCoverLevel: this.adaptations.guardCoverLevel,
+        guardDurabilityLevel: this.adaptations.guardDurabilityLevel,
+        ammoReductionLevel: this.adaptations.ammoReductionLevel,
+        meleeCautionLevel: this.adaptations.meleeCautionLevel,
       },
     };
+  }
+
+  private attackNearestGuard(mode: "melee" | "gun"): void {
+    const weaponId = mode === "gun" ? (this.playerWeapons.sidearmId ?? this.playerWeapons.primaryGunId) : this.playerWeapons.meleeWeaponId;
+    if (!weaponId) {
+      return;
+    }
+    const weapon = weapons[weaponId];
+    const target = this.guards
+      .filter((guard) => !this.bodyState.bodies[guard.id])
+      .map((guard) => ({
+        guard,
+        distance: Math.hypot(guard.position.x - this.player.position.x, guard.position.y - this.player.position.y),
+      }))
+      .filter(({ guard, distance }) => distance <= weapon.range && this.detection.hasClearRay(this.player.position, guard.position))
+      .sort((a, b) => a.distance - b.distance)[0]?.guard;
+    if (target) {
+      this.playerAttack(target.id, weaponId);
+    }
+  }
+
+  private canUseWeapon(weaponId: WeaponId): boolean {
+    const weapon = weapons[weaponId];
+    if (weapon.kind === "gun") {
+      const ownsGun = this.playerWeapons.primaryGunId === weaponId || this.playerWeapons.sidearmId === weaponId;
+      return ownsGun && !this.playerWeapons.reload && (this.playerWeapons.ammoByWeapon[weaponId] ?? 0) > 0;
+    }
+    if (weapon.slot === "melee") {
+      return this.playerWeapons.meleeWeaponId === weaponId;
+    }
+    return weaponId === "fists";
+  }
+
+  private consumeAttackAmmo(weaponId: WeaponId): void {
+    if (weapons[weaponId].kind !== "gun") {
+      return;
+    }
+    this.playerWeapons = {
+      ...this.playerWeapons,
+      ammoByWeapon: {
+        ...this.playerWeapons.ammoByWeapon,
+        [weaponId]: Math.max(0, (this.playerWeapons.ammoByWeapon[weaponId] ?? 0) - 1),
+      },
+      reserveAmmoByType: { ...this.playerWeapons.reserveAmmoByType },
+      reload: this.playerWeapons.reload ? { ...this.playerWeapons.reload } : null,
+    };
+  }
+
+  private reloadEquippedGun(): void {
+    const weaponId = this.playerWeapons.sidearmId ?? this.playerWeapons.primaryGunId;
+    if (!weaponId) {
+      return;
+    }
+    const before = this.playerWeapons.reload;
+    this.playerWeapons = startReload(this.playerWeapons, weaponId);
+    if (!before && this.playerWeapons.reload) {
+      this.events.record(this.timeMs, {
+        type: "reload",
+        position: { ...this.player.position },
+        payload: { weaponId },
+      });
+    }
+  }
+
+  private useHealingItem(): void {
+    if (this.playerWeapons.healingItems <= 0 || this.playerHealth.hp >= this.playerHealth.maxHp) {
+      return;
+    }
+    this.playerWeapons = {
+      ...this.playerWeapons,
+      ammoByWeapon: { ...this.playerWeapons.ammoByWeapon },
+      reserveAmmoByType: { ...this.playerWeapons.reserveAmmoByType },
+      reload: this.playerWeapons.reload ? { ...this.playerWeapons.reload } : null,
+      healingItems: this.playerWeapons.healingItems - 1,
+    };
+    this.playerHealth = {
+      ...this.playerHealth,
+      hp: Math.min(this.playerHealth.maxHp, this.playerHealth.hp + healingAmount),
+      isDown: false,
+    };
+    this.events.record(this.timeMs, {
+      type: "heal",
+      position: { ...this.player.position },
+      payload: { amount: healingAmount, hp: this.playerHealth.hp, maxHp: this.playerHealth.maxHp },
+    });
+  }
+
+  private discoverNearbyBodies(guard: GuardRuntime): void {
+    const range = bodyDiscoveryRange + this.adaptations.bodyCheckLevel * 1.2;
+    for (const body of Object.values(this.bodyState.bodies)) {
+      if (body.guardId === guard.id || body.discoveredBy) {
+        continue;
+      }
+      const distance = Math.hypot(guard.position.x - body.position.x, guard.position.y - body.position.y);
+      if (distance > range || !this.detection.hasClearRay(guard.position, body.position)) {
+        continue;
+      }
+
+      this.bodyState = discoverBody(this.bodyState, {
+        ...body,
+        position: { ...body.position },
+        discoveredBy: guard.id,
+      });
+      this.events.record(this.timeMs, {
+        type: "body_discovered",
+        position: { ...body.position },
+        payload: { guardId: guard.id, bodyGuardId: body.guardId, bodyState: body.bodyState },
+      });
+      this.setAlertState(registerBodyDiscovery(this.alertState, body.bodyState));
+      if (body.bodyState === "knocked_out" && !this.pendingWakeups.some((wakeup) => wakeup.guardId === body.guardId)) {
+        this.pendingWakeups.push({
+          guardId: body.guardId,
+          wokenBy: guard.id,
+          wakeAtMs: this.timeMs + bodyWakeDelayMs,
+        });
+      }
+    }
+  }
+
+  private resolvePendingWakeups(): void {
+    for (let index = this.pendingWakeups.length - 1; index >= 0; index -= 1) {
+      const wakeup = this.pendingWakeups[index];
+      if (this.timeMs < wakeup.wakeAtMs) {
+        continue;
+      }
+      const body = this.bodyState.bodies[wakeup.guardId];
+      if (!body || body.bodyState !== "knocked_out") {
+        this.pendingWakeups.splice(index, 1);
+        continue;
+      }
+      this.bodyState = wakeGuard(this.bodyState, wakeup.guardId, wakeup.wokenBy);
+      this.guardHealth.set(wakeup.guardId, createHealthState(wakeup.guardId, 45 + this.adaptations.guardDurabilityLevel * 10));
+      const guard = this.guards.find((candidate) => candidate.id === wakeup.guardId);
+      if (guard) {
+        guard.state = "search";
+        guard.suspicion = Math.max(guard.suspicion, 0.55);
+        guard.searchUntilMs = this.timeMs + 2000;
+        guard.inspectionTarget = null;
+      }
+      this.events.record(this.timeMs, {
+        type: "guard_wakeup",
+        position: { ...body.position },
+        payload: { guardId: wakeup.guardId, wokenBy: wakeup.wokenBy },
+      });
+      this.pendingWakeups.splice(index, 1);
+    }
   }
 
   getEvents(): RunEvent[] {

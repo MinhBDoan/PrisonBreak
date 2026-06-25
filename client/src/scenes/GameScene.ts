@@ -159,7 +159,20 @@ export class GameScene extends Phaser.Scene {
       sprint: this.keys.shift.isDown || this.isHeld("ShiftLeft", "ShiftRight", "Shift"),
       interact: Phaser.Input.Keyboard.JustDown(this.keys.interact),
       throwTarget: this.consumeThrowTarget(),
+      attack: this.consumeAttackInput(),
+      heal: this.consumeHeld("KeyF", "f", "F"),
+      reload: this.consumeHeld("KeyR", "r", "R"),
     };
+  }
+
+  private consumeAttackInput(): SimulationInput["attack"] {
+    if (this.consumeHeld("Digit2", "2", "Numpad2")) {
+      return "gun";
+    }
+    if (this.consumeHeld("Digit1", "1", "Numpad1")) {
+      return "melee";
+    }
+    return null;
   }
 
   private beginPebbleAim(pointer: Phaser.Input.Pointer): void {
@@ -219,6 +232,14 @@ export class GameScene extends Phaser.Scene {
 
   private isHeld(...codes: string[]): boolean {
     return codes.some((code) => this.heldKeys.has(code));
+  }
+
+  private consumeHeld(...codes: string[]): boolean {
+    const matched = codes.some((code) => this.heldKeys.has(code));
+    for (const code of codes) {
+      this.heldKeys.delete(code);
+    }
+    return matched;
   }
 
   private focusCanvas(): void {
