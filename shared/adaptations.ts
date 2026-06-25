@@ -5,6 +5,12 @@ export const adaptationCaps = {
   inspect_hiding_spot: 2,
   increase_noise_sensitivity: 2,
   activate_reserve_guard: 1,
+  add_body_checks: 2,
+  place_armed_response: 2,
+  improve_guard_cover: 2,
+  increase_guard_durability: 2,
+  reduce_ammo_availability: 2,
+  increase_melee_caution: 2,
   maintain_security_posture: 999,
 } as const;
 
@@ -15,6 +21,12 @@ export const AdaptationTypeSchema = z.enum([
   "inspect_hiding_spot",
   "increase_noise_sensitivity",
   "activate_reserve_guard",
+  "add_body_checks",
+  "place_armed_response",
+  "improve_guard_cover",
+  "increase_guard_durability",
+  "reduce_ammo_availability",
+  "increase_melee_caution",
   "maintain_security_posture",
 ]);
 
@@ -50,6 +62,36 @@ export const adaptationAllowlist: ReadonlyArray<{
     action: "activate_reserve_guard",
     validTargets: "exit",
     description: "Activate the reserve guard near the exit after repeated successful escapes.",
+  },
+  {
+    action: "add_body_checks",
+    validTargets: "behaviorSummary.combat.favoriteCombatZone",
+    description: "Add guard checks around zones where bodies or incapacitated guards are found.",
+  },
+  {
+    action: "place_armed_response",
+    validTargets: "behaviorSummary.combat.favoriteCombatZone",
+    description: "Place armed response near the player's favored gun combat zone.",
+  },
+  {
+    action: "improve_guard_cover",
+    validTargets: "behaviorSummary.combat.favoriteCombatZone",
+    description: "Improve guard cover in zones where the player relies on gun attacks.",
+  },
+  {
+    action: "increase_guard_durability",
+    validTargets: "global",
+    description: "Increase guard durability after combat repeatedly incapacitates guards.",
+  },
+  {
+    action: "reduce_ammo_availability",
+    validTargets: "global",
+    description: "Reduce ammo availability when the player relies on guns.",
+  },
+  {
+    action: "increase_melee_caution",
+    validTargets: "behaviorSummary.combat.favoriteCombatZone",
+    description: "Increase guard caution in zones where the player relies on melee attacks.",
   },
   {
     action: "maintain_security_posture",

@@ -49,6 +49,17 @@ export const BehaviorSummarySchema = z.object({
   frequentSprinting: z.boolean(),
   detections: z.number().nonnegative(),
   successfulEscapes: z.number().nonnegative(),
+  combat: z.object({
+    primaryStyle: z.enum(["stealth", "melee", "gun", "hybrid"]),
+    favoriteCombatZone: z.string().nullable(),
+    gunAttackCount: z.number().nonnegative(),
+    meleeAttackCount: z.number().nonnegative(),
+    knockoutCount: z.number().nonnegative(),
+    killCount: z.number().nonnegative(),
+    bodyDiscoveryCount: z.number().nonnegative(),
+    healingUseCount: z.number().nonnegative(),
+    armedResponseTriggers: z.number().nonnegative(),
+  }),
 });
 export type BehaviorSummary = z.infer<typeof BehaviorSummarySchema>;
 

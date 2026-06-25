@@ -25,6 +25,17 @@ const behaviorSummary: BehaviorSummary = {
   frequentSprinting: true,
   detections: 2,
   successfulEscapes: 3,
+  combat: {
+    primaryStyle: "stealth",
+    favoriteCombatZone: null,
+    gunAttackCount: 0,
+    meleeAttackCount: 0,
+    knockoutCount: 0,
+    killCount: 0,
+    bodyDiscoveryCount: 0,
+    healingUseCount: 0,
+    armedResponseTriggers: 0,
+  },
 };
 
 function decision(overrides: Partial<AdaptationDecision> = {}): AdaptationDecision {
@@ -78,6 +89,12 @@ describe("adaptation shared contract", () => {
       inspect_hiding_spot: 2,
       increase_noise_sensitivity: 2,
       activate_reserve_guard: 1,
+      add_body_checks: 2,
+      place_armed_response: 2,
+      improve_guard_cover: 2,
+      increase_guard_durability: 2,
+      reduce_ammo_availability: 2,
+      increase_melee_caution: 2,
       maintain_security_posture: 999,
     });
     expect(adaptationAllowlist.map((entry) => entry.action)).toEqual([
@@ -85,6 +102,12 @@ describe("adaptation shared contract", () => {
       "inspect_hiding_spot",
       "increase_noise_sensitivity",
       "activate_reserve_guard",
+      "add_body_checks",
+      "place_armed_response",
+      "improve_guard_cover",
+      "increase_guard_durability",
+      "reduce_ammo_availability",
+      "increase_melee_caution",
       "maintain_security_posture",
     ]);
   });

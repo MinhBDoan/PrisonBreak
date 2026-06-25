@@ -49,6 +49,17 @@ function createTransport(): ApiTransport & {
                 frequentSprinting: false,
                 detections: 0,
                 successfulEscapes: request.outcome === "escape" ? 1 : 0,
+                combat: {
+                  primaryStyle: "stealth",
+                  favoriteCombatZone: null,
+                  gunAttackCount: 0,
+                  meleeAttackCount: 0,
+                  knockoutCount: 0,
+                  killCount: 0,
+                  bodyDiscoveryCount: 0,
+                  healingUseCount: 0,
+                  armedResponseTriggers: 0,
+                },
               },
               adaptation: {
                 action: "increase_corridor_patrol",
