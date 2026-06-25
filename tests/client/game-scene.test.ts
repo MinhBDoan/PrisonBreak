@@ -83,18 +83,51 @@ const hudCalls = {
   showPaused: vi.fn(),
 };
 
+const rendererCalls = {
+  showPebbleAim: vi.fn(),
+  hidePebbleAim: vi.fn(),
+  spawnPebbleThrow: vi.fn(),
+};
+
 function mockSceneCollaborators(): void {
   hudCalls.update.mockReset();
   hudCalls.showPaused.mockReset();
+  rendererCalls.showPebbleAim.mockReset();
+  rendererCalls.hidePebbleAim.mockReset();
+  rendererCalls.spawnPebbleThrow.mockReset();
   vi.doMock("../../client/src/render/GameRenderer", () => ({
+    clampThrowTarget: (
+      origin: { x: number; y: number },
+      target: { x: number; y: number },
+      maxRange = 4,
+    ) => {
+      const dx = target.x - origin.x;
+      const dy = target.y - origin.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance === 0 || distance <= maxRange) {
+        return { ...target };
+      }
+      return {
+        x: origin.x + (dx / distance) * maxRange,
+        y: origin.y + (dy / distance) * maxRange,
+      };
+    },
     GameRenderer: class {
       mount() {}
       render() {}
       followCamera() {}
       spawnNoiseRipple() {}
-      showPebbleAim() {}
-      hidePebbleAim() {}
+      showPebbleAim(...args: unknown[]) {
+        rendererCalls.showPebbleAim(...args);
+      }
+      hidePebbleAim(...args: unknown[]) {
+        rendererCalls.hidePebbleAim(...args);
+      }
+      spawnPebbleThrow(...args: unknown[]) {
+        rendererCalls.spawnPebbleThrow(...args);
+      }
     },
+    renderScale: 64,
   }));
   vi.doMock("../../client/src/ui/Hud", () => ({
     Hud: class {
@@ -163,6 +196,7 @@ async function createSceneHarness(): Promise<{
       once() {},
     },
     time: {
+      now: 0,
       delayedCall(_delayMs: number, callback: () => void) {
         callback();
       },
@@ -276,5 +310,76 @@ describe("GameScene", () => {
     expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
       direction: { x: 0, y: 0 },
     }));
+  });
+
+  it("charges and submits pebble throw targets through pointer input", async () => {
+    const { scene } = await createSceneHarness();
+
+    startRun(scene, 1);
+    const simulation = (scene as unknown as {
+      simulation: {
+        setPlayerPosition: (position: { x: number; y: number }) => void;
+        getSnapshot: () => { player: { pebbles: number } };
+        step: (input: unknown) => void;
+      };
+      input: { emit: (type: string, pointer: unknown) => void; activePointer: unknown };
+      time: { now: number };
+    }).simulation;
+    simulation.setPlayerPosition({ x: 2, y: 2 });
+    (simulation as unknown as { player: { pebbles: number } }).player.pebbles = 1;
+    const stepSpy = vi.spyOn(simulation, "step");
+    const pointer = {
+      worldX: 64 * 9,
+      worldY: 64 * 2,
+      leftButtonDown: () => true,
+    };
+
+    (scene as unknown as { input: { emit: (type: string, pointer: unknown) => void; activePointer: unknown } }).input.activePointer = pointer;
+    (scene as unknown as { input: { emit: (type: string, pointer: unknown) => void } }).input.emit("pointerdown", pointer);
+    (scene as unknown as { time: { now: number } }).time.now = 1000;
+    scene.update();
+
+    expect(rendererCalls.showPebbleAim).toHaveBeenCalled();
+
+    (scene as unknown as { input: { emit: (type: string, pointer: unknown) => void } }).input.emit("pointerup", pointer);
+    scene.update();
+
+    expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      throwTarget: { x: 6, y: 2 },
+    }));
+    expect(rendererCalls.hidePebbleAim).toHaveBeenCalled();
+  });
+
+  it("plays a pebble throw animation for new pebble throw events", async () => {
+    const { scene } = await createSceneHarness();
+
+    startRun(scene, 1);
+    const runtime = scene as unknown as {
+      simulation: {
+        setPlayerPosition: (position: { x: number; y: number }) => void;
+        getSnapshot: () => { player: { pebbles: number } };
+      };
+      input: { emit: (type: string, pointer: unknown) => void };
+      time: { now: number };
+    };
+    runtime.simulation.setPlayerPosition({ x: 2, y: 2 });
+    (runtime.simulation as unknown as { player: { pebbles: number } }).player.pebbles = 1;
+    const pointer = {
+      worldX: 64 * 3,
+      worldY: 64 * 2,
+      leftButtonDown: () => true,
+    };
+
+    runtime.input.emit("pointerdown", pointer);
+    runtime.time.now = 1000;
+    runtime.input.emit("pointerup", pointer);
+    scene.update();
+
+    expect(rendererCalls.spawnPebbleThrow).toHaveBeenCalledWith(
+      scene,
+      expect.objectContaining({ x: 2, y: 2 }),
+      expect.objectContaining({ x: 3, y: 2 }),
+      expect.any(Function),
+    );
   });
 });

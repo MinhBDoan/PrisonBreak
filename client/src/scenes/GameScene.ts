@@ -1,10 +1,14 @@
 import Phaser from "phaser";
 import { createIdempotencyKey } from "../api/GameApiClient";
 import { GameSimulation } from "../game/GameSimulation";
-import type { SimulationInput } from "../game/types";
-import { GameRenderer } from "../render/GameRenderer";
+import type { SimulationInput, Vector } from "../game/types";
+import { clampThrowTarget, GameRenderer, renderScale } from "../render/GameRenderer";
 import { Hud } from "../ui/Hud";
 import type { StartRunResponse } from "../../../shared/contracts";
+
+const minPebbleThrowRange = 1;
+const maxPebbleThrowRange = 4;
+const pebbleChargeMs = 1000;
 
 type KeySet = {
   up: Phaser.Input.Keyboard.Key;
@@ -31,6 +35,9 @@ export class GameScene extends Phaser.Scene {
   private lastEventCount = 0;
   private completionShown = false;
   private paused = false;
+  private pendingThrowTarget: Vector | null = null;
+  private aimingPebble = false;
+  private pebbleAimStartedAtMs = 0;
   private runData: StartRunResponse = {
     runId: 0,
     config: { adaptations: [] },
@@ -51,6 +58,9 @@ export class GameScene extends Phaser.Scene {
     this.lastEventCount = 0;
     this.completionShown = false;
     this.paused = false;
+    this.pendingThrowTarget = null;
+    this.aimingPebble = false;
+    this.pebbleAimStartedAtMs = 0;
     this.cameras.main.setBackgroundColor("#081018");
     this.simulation = new GameSimulation({ nextRunConfig: data.config });
     this.viewRenderer = new GameRenderer();
@@ -74,13 +84,18 @@ export class GameScene extends Phaser.Scene {
       window.removeEventListener("keyup", this.handleDomKeyUp);
       document.removeEventListener("keydown", this.handleDomKeyDown);
       document.removeEventListener("keyup", this.handleDomKeyUp);
+      this.input.off("pointerdown", this.beginPebbleAim, this);
+      this.input.off("pointerup", this.releasePebbleAim, this);
       this.heldKeys.clear();
     });
     this.focusCanvas();
+    this.input.on("pointerdown", this.beginPebbleAim, this);
+    this.input.on("pointerup", this.releasePebbleAim, this);
 
     this.viewRenderer.mount(this);
     const snapshot = this.simulation.getSnapshot();
     this.viewRenderer.render(this, snapshot);
+    this.updatePebbleAim(snapshot);
     this.viewRenderer.followCamera(this, snapshot);
     this.hud.update(snapshot);
   }
@@ -111,6 +126,7 @@ export class GameScene extends Phaser.Scene {
     this.emitNewNoiseRipples();
     const snapshot = this.simulation.getSnapshot();
     this.viewRenderer.render(this, snapshot);
+    this.updatePebbleAim(snapshot);
     this.viewRenderer.followCamera(this, snapshot);
     this.hud.update(snapshot);
 
@@ -142,6 +158,62 @@ export class GameScene extends Phaser.Scene {
       direction,
       sprint: this.keys.shift.isDown || this.isHeld("ShiftLeft", "ShiftRight", "Shift"),
       interact: Phaser.Input.Keyboard.JustDown(this.keys.interact),
+      throwTarget: this.consumeThrowTarget(),
+    };
+  }
+
+  private beginPebbleAim(pointer: Phaser.Input.Pointer): void {
+    const snapshot = this.simulation.getSnapshot();
+    if (this.paused || this.completionShown || snapshot.completed || snapshot.player.pebbles <= 0 || pointer.leftButtonDown() === false) {
+      return;
+    }
+    this.aimingPebble = true;
+    this.pebbleAimStartedAtMs = this.time.now;
+  }
+
+  private releasePebbleAim(pointer: Phaser.Input.Pointer): void {
+    if (!this.aimingPebble) {
+      return;
+    }
+    const snapshot = this.simulation.getSnapshot();
+    const target = this.pointerWorld(pointer);
+    this.pendingThrowTarget = clampThrowTarget(snapshot.player.position, target, this.currentPebbleThrowRange());
+    this.aimingPebble = false;
+    this.pebbleAimStartedAtMs = 0;
+    this.viewRenderer.hidePebbleAim();
+  }
+
+  private consumeThrowTarget(): Vector | null {
+    const target = this.pendingThrowTarget;
+    this.pendingThrowTarget = null;
+    return target;
+  }
+
+  private updatePebbleAim(snapshot: ReturnType<GameSimulation["getSnapshot"]>): void {
+    if (!this.aimingPebble || snapshot.player.pebbles <= 0 || snapshot.completed) {
+      this.viewRenderer.hidePebbleAim();
+      return;
+    }
+    this.viewRenderer.showPebbleAim(
+      this,
+      snapshot.player.position,
+      this.pointerWorld(this.input.activePointer),
+      this.currentPebbleThrowRange(),
+    );
+  }
+
+  private currentPebbleThrowRange(): number {
+    if (!this.aimingPebble) {
+      return minPebbleThrowRange;
+    }
+    const progress = Math.max(0, Math.min(1, (this.time.now - this.pebbleAimStartedAtMs) / pebbleChargeMs));
+    return minPebbleThrowRange + (maxPebbleThrowRange - minPebbleThrowRange) * progress;
+  }
+
+  private pointerWorld(pointer: Phaser.Input.Pointer): Vector {
+    return {
+      x: pointer.worldX / renderScale,
+      y: pointer.worldY / renderScale,
     };
   }
 
@@ -158,6 +230,10 @@ export class GameScene extends Phaser.Scene {
   private emitNewNoiseRipples(): void {
     const events = this.simulation.getEvents();
     for (const event of events.slice(this.lastEventCount)) {
+      if (event.type === "pebble_throw" && typeof event.payload.landing === "object" && event.payload.landing) {
+        this.viewRenderer.spawnPebbleThrow(this, event.position, event.payload.landing as Vector, () => undefined);
+        continue;
+      }
       if (event.type !== "noise") {
         continue;
       }

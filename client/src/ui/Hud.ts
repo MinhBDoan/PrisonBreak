@@ -137,6 +137,10 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#039;");
 }
 
+function escapePercent(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 export class Hud {
   private readonly root: HTMLElement;
 
@@ -147,54 +151,56 @@ export class Hud {
 
   update(snapshot: SimulationSnapshot): void {
     const model = createHudModel(snapshot);
+    const healthPercent = escapePercent(model.healthPercent);
+    const suspicionPercent = escapePercent(model.suspicionPercent);
 
     this.root.innerHTML = `
       <section class="hud__panel">
         <div class="hud__eyebrow">Objective</div>
-        <div class="hud__objective">${model.objective}</div>
+        <div class="hud__objective">${escapeHtml(model.objective)}</div>
         <div class="hud__row">
           <span>Key</span>
-          <strong>${model.keyLabel}</strong>
+          <strong>${escapeHtml(model.keyLabel)}</strong>
         </div>
         <div class="hud__row">
           <span>Pebbles</span>
           <strong>${model.pebbleCount}</strong>
         </div>
-        <div class="hud__prompt">${model.prompt}</div>
+        <div class="hud__prompt">${escapeHtml(model.prompt)}</div>
       </section>
       <section class="hud__panel hud__panel--right">
-        <div class="hud__banner hud__banner--${model.banner.tone}">${model.banner.text}</div>
+        <div class="hud__banner hud__banner--${model.banner.tone}">${escapeHtml(model.banner.text)}</div>
         <div class="hud__row hud__row--compact">
           <span>Health</span>
-          <strong>${model.healthLabel}</strong>
+          <strong>${escapeHtml(model.healthLabel)}</strong>
         </div>
         <div class="hud__meter hud__meter--health">
-          <div class="hud__meter-fill hud__meter-fill--health" style="width: ${model.healthPercent}%"></div>
+          <div class="hud__meter-fill hud__meter-fill--health" style="width: ${healthPercent}%"></div>
         </div>
         <div class="hud__row hud__row--compact">
           <span>Melee</span>
-          <strong>${model.meleeLabel}</strong>
+          <strong>${escapeHtml(model.meleeLabel)}</strong>
         </div>
         <div class="hud__row hud__row--compact">
           <span>Gun</span>
-          <strong>${model.gunLabel}</strong>
+          <strong>${escapeHtml(model.gunLabel)}</strong>
         </div>
         <div class="hud__row hud__row--compact">
           <span>Ammo</span>
-          <strong>${model.ammoLabel}</strong>
+          <strong>${escapeHtml(model.ammoLabel)}</strong>
         </div>
         <div class="hud__row hud__row--compact">
           <span>Reload</span>
-          <strong>${model.reloadLabel}</strong>
+          <strong>${escapeHtml(model.reloadLabel)}</strong>
         </div>
         <div class="hud__row hud__row--compact">
           <span>Heals</span>
-          <strong>${model.healingItemsLabel}</strong>
+          <strong>${escapeHtml(model.healingItemsLabel)}</strong>
         </div>
-        <div class="hud__banner hud__banner--${model.alertTone} hud__banner--small">${model.alertLabel}</div>
+        <div class="hud__banner hud__banner--${model.alertTone} hud__banner--small">${escapeHtml(model.alertLabel)}</div>
         <label class="hud__meter-label" for="suspicion-meter">Suspicion</label>
         <div id="suspicion-meter" class="hud__meter">
-          <div class="hud__meter-fill" style="width: ${model.suspicionPercent}%"></div>
+          <div class="hud__meter-fill" style="width: ${suspicionPercent}%"></div>
         </div>
       </section>
     `;

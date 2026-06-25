@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
-import { createHudModel } from "../../client/src/ui/Hud";
+import { createHudModel, Hud } from "../../client/src/ui/Hud";
 
 describe("createHudModel", () => {
   it("formats combat state alongside objective, pebble, suspicion, and prompt state", () => {
@@ -33,5 +33,22 @@ describe("createHudModel", () => {
     const model = createHudModel(simulation.getSnapshot());
 
     expect(model.banner).toEqual({ text: "Dead", tone: "danger" });
+  });
+
+  it("escapes HUD strings before rendering to the DOM", () => {
+    const simulation = new GameSimulation();
+    const snapshot = simulation.getSnapshot();
+    snapshot.player.weapons.meleeWeaponId = "fists";
+    snapshot.alert.level = "<img src=x onerror=alert(1)>" as typeof snapshot.alert.level;
+    snapshot.completed = { outcome: "death", durationMs: 1200 };
+    const root = {
+      innerHTML: "",
+      classList: { add() {} },
+    } as HTMLElement;
+
+    new Hud(root).update(snapshot);
+
+    expect(root.innerHTML).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(root.innerHTML).not.toContain("<img");
   });
 });
