@@ -51,4 +51,21 @@ describe("createHudModel", () => {
     expect(root.innerHTML).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(root.innerHTML).not.toContain("<img");
   });
+
+  it("renders a bottom equipment bar with weapon slots and ammo", () => {
+    const simulation = new GameSimulation();
+    const root = {
+      innerHTML: "",
+      classList: { add() {} },
+    } as HTMLElement;
+
+    new Hud(root).update(simulation.getSnapshot());
+
+    expect(root.innerHTML).toContain('aria-label="Equipment"');
+    expect(root.innerHTML).toContain("Makeshift Knife");
+    expect(root.innerHTML).toContain("Pistol");
+    expect(root.innerHTML).toContain("6 / 12");
+    expect(root.innerHTML).toContain(">R<");
+    expect(root.innerHTML).toContain(">F<");
+  });
 });

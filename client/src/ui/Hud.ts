@@ -177,30 +177,33 @@ export class Hud {
         <div class="hud__meter hud__meter--health">
           <div class="hud__meter-fill hud__meter-fill--health" style="width: ${healthPercent}%"></div>
         </div>
-        <div class="hud__row hud__row--compact">
-          <span>Melee</span>
-          <strong>${escapeHtml(model.meleeLabel)}</strong>
-        </div>
-        <div class="hud__row hud__row--compact">
-          <span>Gun</span>
-          <strong>${escapeHtml(model.gunLabel)}</strong>
-        </div>
-        <div class="hud__row hud__row--compact">
-          <span>Ammo</span>
-          <strong>${escapeHtml(model.ammoLabel)}</strong>
-        </div>
-        <div class="hud__row hud__row--compact">
-          <span>Reload</span>
-          <strong>${escapeHtml(model.reloadLabel)}</strong>
-        </div>
-        <div class="hud__row hud__row--compact">
-          <span>Heals</span>
-          <strong>${escapeHtml(model.healingItemsLabel)}</strong>
-        </div>
         <div class="hud__banner hud__banner--${model.alertTone} hud__banner--small">${escapeHtml(model.alertLabel)}</div>
         <label class="hud__meter-label" for="suspicion-meter">Suspicion</label>
         <div id="suspicion-meter" class="hud__meter">
           <div class="hud__meter-fill" style="width: ${suspicionPercent}%"></div>
+        </div>
+      </section>
+      <section class="hud__equipment" aria-label="Equipment">
+        <div class="hud__slot hud__slot--active">
+          <span class="hud__slot-key">1</span>
+          <span class="hud__slot-label">Melee</span>
+          <strong>${escapeHtml(model.meleeLabel)}</strong>
+        </div>
+        <div class="hud__slot hud__slot--active">
+          <span class="hud__slot-key">2</span>
+          <span class="hud__slot-label">Gun</span>
+          <strong>${escapeHtml(model.gunLabel)}</strong>
+          <span class="hud__slot-meta">${escapeHtml(model.ammoLabel)}</span>
+        </div>
+        <div class="hud__slot">
+          <span class="hud__slot-key">R</span>
+          <span class="hud__slot-label">Reload</span>
+          <strong>${escapeHtml(model.reloadLabel)}</strong>
+        </div>
+        <div class="hud__slot">
+          <span class="hud__slot-key">F</span>
+          <span class="hud__slot-label">Heal</span>
+          <strong>${escapeHtml(model.healingItemsLabel)}</strong>
         </div>
       </section>
     `;
