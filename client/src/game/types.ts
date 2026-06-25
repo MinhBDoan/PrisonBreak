@@ -98,6 +98,8 @@ export type GuardStateSnapshot = {
   position: Vector;
   facing: Vector;
   state: GuardState;
+  bodyState?: BodyState;
+  health?: HealthState;
   routeId: string;
   routeIndex: number;
   suspicion: number;

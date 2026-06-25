@@ -1,5 +1,5 @@
 import type { ActiveAdaptation, RunEvent, RunOutcome } from "../../../shared/contracts";
-import { createAlertState, registerBodyDiscovery, registerNoise } from "./AlertSystem";
+import { createAlertState, registerNoise } from "./AlertSystem";
 import { addBody, createBodyState } from "./BodySystem";
 import { resolveAttack } from "./CombatSystem";
 import { DetectionSystem } from "./DetectionSystem";
@@ -25,6 +25,7 @@ import type {
   Vector,
   WeaponId,
 } from "./types";
+import { weapons } from "./weapons";
 
 const stepMs = 100;
 const walkSpeed = 0.018333;
@@ -146,6 +147,14 @@ function buildAdaptations(adaptations: ActiveAdaptation[] = []): AppliedAdaptati
   }
 
   return applied;
+}
+
+function weaponSpatialNoiseRadius(weaponId: WeaponId, alertNoise: number, map: PrisonMap): number {
+  const weapon = weapons[weaponId];
+  const mapLimit = Math.max(1, Math.min(map.width, map.height) - 1);
+  const radius = weapon.kind === "gun" ? 4 + alertNoise / 10 : 1.5 + alertNoise / 12;
+
+  return Math.min(mapLimit, radius);
 }
 
 export class GameSimulation {
@@ -302,9 +311,10 @@ export class GameSimulation {
       lineOfFireBlocked: !this.detection.hasClearRay(this.player.position, target.position),
     });
 
+    const noiseRadius = weaponSpatialNoiseRadius(weaponId, result.noise, this.map);
     const noise: NoiseEvent = {
       position: { ...this.player.position },
-      radius: result.noise,
+      radius: noiseRadius,
       source: "weapon",
     };
     this.events.record(this.timeMs, {
@@ -336,7 +346,6 @@ export class GameSimulation {
         position: { ...target.position },
         payload: { attackerId: "player", targetId: targetGuardId, weaponId },
       });
-      this.setAlertState(registerBodyDiscovery(this.alertState, result.bodyState));
     }
 
     return result;
@@ -351,9 +360,15 @@ export class GameSimulation {
         hiddenIn: this.player.hiddenIn,
         pebbles: this.player.pebbles,
       },
-      guards: this.guards.map((guard) => ({
-        ...cloneGuard(guard),
-      })),
+      guards: this.guards.map((guard) => {
+        const body = this.bodyState.bodies[guard.id];
+        const health = this.guardHealth.get(guard.id);
+        return {
+          ...cloneGuard(guard),
+          bodyState: body?.bodyState ?? "active",
+          health: health ? { ...health } : undefined,
+        };
+      }),
       objectives: this.objectives.snapshot(this.player),
       pebbles: this.map.pebbles.map((pebble) => ({
         ...pebble,
@@ -624,6 +639,13 @@ export class GameSimulation {
         type: "alert_changed",
         position: { ...this.player.position },
         payload: { from: previous.level, to: next.level, pressure: next.pressure },
+      });
+    }
+    if (!previous.armedResponseTriggered && next.armedResponseTriggered) {
+      this.events.record(this.timeMs, {
+        type: "armed_response_triggered",
+        position: { ...this.player.position },
+        payload: { level: next.level, pressure: next.pressure },
       });
     }
   }

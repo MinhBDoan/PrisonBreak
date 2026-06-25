@@ -139,11 +139,11 @@ describe("simulation combat integration", () => {
     expect(simulation.getAlertState().level).not.toBe("calm");
     expect(simulation.getSnapshot().completed).toBeNull();
     expect(simulation.getEvents().some((event) => event.type === "attack")).toBe(true);
-    expect(
-      simulation
-        .getEvents()
-        .some((event) => event.type === "noise" && event.payload.source === "weapon" && event.payload.weaponId === "pistol"),
-    ).toBe(true);
+    const weaponNoise = simulation
+      .getEvents()
+      .find((event) => event.type === "noise" && event.payload.source === "weapon" && event.payload.weaponId === "pistol");
+    expect(weaponNoise?.payload.radius).not.toBe(result?.noise);
+    expect(weaponNoise?.payload.radius as number).toBeLessThan(prisonMap.width);
   });
 
   it("baton attacks can knock out a guard body and skip that guard's capture updates", () => {
@@ -162,7 +162,16 @@ describe("simulation combat integration", () => {
       bodyState: "knocked_out",
       position: { x: 3.2, y: 2.5 },
     });
+    expect(simulation.getSnapshot().guards[0].bodyState).toBe("knocked_out");
+    expect(simulation.getSnapshot().guards[0].health).toEqual({
+      entityId: "guard-a",
+      hp: 0,
+      maxHp: 45,
+      isDown: true,
+    });
+    expect(simulation.getAlertState().pressure).toBe(22);
     expect(simulation.getEvents().some((event) => event.type === "knockout")).toBe(true);
+    expect(simulation.getEvents().some((event) => event.type === "body_discovered")).toBe(false);
     expect(simulation.getSnapshot().completed).toBeNull();
   });
 
@@ -177,7 +186,9 @@ describe("simulation combat integration", () => {
 
     expect(result?.bodyState).toBe("dead");
     expect(simulation.getBodyState().bodies["guard-a"]?.bodyState).toBe("dead");
+    expect(simulation.getSnapshot().guards[0].bodyState).toBe("dead");
     expect(simulation.getEvents().some((event) => event.type === "kill")).toBe(true);
+    expect(simulation.getEvents().some((event) => event.type === "body_discovered")).toBe(false);
   });
 
   it("attacking through blocked line of fire misses but still records attack noise and alert", () => {
@@ -197,5 +208,23 @@ describe("simulation combat integration", () => {
         .getEvents()
         .some((event) => event.type === "noise" && event.payload.source === "weapon" && event.payload.weaponId === "pistol"),
     ).toBe(true);
+  });
+
+  it("emits armed response telemetry once when combat noise crosses that threshold", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [
+        { id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-b", position: { x: 5.5, y: 3.5 }, facing: { x: 1, y: 0 } },
+      ],
+    });
+    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+
+    simulation.playerAttack("guard-a", "pistol");
+    simulation.playerAttack("guard-b", "pistol");
+    simulation.playerAttack("guard-b", "pistol");
+
+    const armedEvents = simulation.getEvents().filter((event) => event.type === "armed_response_triggered");
+    expect(simulation.getAlertState().armedResponseTriggered).toBe(true);
+    expect(armedEvents).toHaveLength(1);
   });
 });
