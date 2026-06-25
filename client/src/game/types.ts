@@ -74,6 +74,24 @@ export interface HealthState {
 }
 
 export type BodyState = "active" | "knocked_out" | "dead";
+export type AlertLevel = "calm" | "suspicious" | "alert" | "armed_response" | "lockdown_pressure";
+
+export interface AlertState {
+  level: AlertLevel;
+  pressure: number;
+  armedResponseTriggered: boolean;
+}
+
+export interface BodyRecord {
+  guardId: string;
+  bodyState: Exclude<BodyState, "active">;
+  position: Vector;
+  discoveredBy?: string;
+}
+
+export interface BodySystemState {
+  bodies: Record<string, BodyRecord>;
+}
 
 export type GuardStateSnapshot = {
   id: string;
