@@ -142,6 +142,19 @@ function buildEligibleAdaptations(
   activeAdaptations: AdaptationDecision[],
 ): AdaptationDecision[] {
   const candidates: AdaptationDecision[] = [];
+  const hasGunEvidence =
+    behaviorSummary.combat.gunAttackCount > 0 &&
+    (behaviorSummary.combat.primaryStyle === "gun" ||
+      behaviorSummary.combat.primaryStyle === "hybrid");
+  const hasMeleeEvidence =
+    behaviorSummary.combat.meleeAttackCount > 0 &&
+    (behaviorSummary.combat.primaryStyle === "melee" ||
+      behaviorSummary.combat.primaryStyle === "hybrid");
+  const hasBodyEvidence =
+    behaviorSummary.combat.knockoutCount > 0 ||
+    behaviorSummary.combat.killCount > 0 ||
+    behaviorSummary.combat.bodyDiscoveryCount > 0;
+
   if (behaviorSummary.mostUsedCorridor) {
     candidates.push({
       action: "increase_corridor_patrol",
@@ -168,6 +181,48 @@ function buildEligibleAdaptations(
       action: "activate_reserve_guard",
       target: "exit",
       rationale: "The player escaped successfully multiple times.",
+    });
+  }
+  if (behaviorSummary.combat.favoriteCombatZone && hasGunEvidence) {
+    candidates.push(
+      {
+        action: "place_armed_response",
+        target: behaviorSummary.combat.favoriteCombatZone,
+        rationale: "The player relied on gun attacks in this zone.",
+      },
+      {
+        action: "improve_guard_cover",
+        target: behaviorSummary.combat.favoriteCombatZone,
+        rationale: "The player used gun attacks in this zone.",
+      },
+    );
+  }
+  if (hasGunEvidence) {
+    candidates.push({
+      action: "reduce_ammo_availability",
+      target: "global",
+      rationale: "The player relied on gun attacks.",
+    });
+  }
+  if (behaviorSummary.combat.favoriteCombatZone && hasMeleeEvidence) {
+    candidates.push({
+      action: "increase_melee_caution",
+      target: behaviorSummary.combat.favoriteCombatZone,
+      rationale: "The player relied on melee attacks in this zone.",
+    });
+  }
+  if (behaviorSummary.combat.favoriteCombatZone && hasBodyEvidence) {
+    candidates.push({
+      action: "add_body_checks",
+      target: behaviorSummary.combat.favoriteCombatZone,
+      rationale: "Recent combat left knockout, kill, or body discovery evidence in this zone.",
+    });
+  }
+  if (hasBodyEvidence) {
+    candidates.push({
+      action: "increase_guard_durability",
+      target: "global",
+      rationale: "Recent combat left knockout, kill, or body discovery evidence.",
     });
   }
 

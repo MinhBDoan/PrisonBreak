@@ -51,6 +51,13 @@ function runner(result: ProcessResult): ProcessRunner {
   return vi.fn(async () => result);
 }
 
+function eligibleAdaptationsFrom(processRunner: ProcessRunner): AdaptationDecision[] {
+  const prompt = vi.mocked(processRunner).mock.calls[0][2];
+  const eligibleJson = prompt.match(/Eligible adaptations: (.+)$/m)?.[1];
+  expect(eligibleJson).toBeDefined();
+  return JSON.parse(eligibleJson as string) as AdaptationDecision[];
+}
+
 function isProcessAlive(pid: number): boolean {
   if (process.platform === "win32") {
     const output = execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
@@ -211,10 +218,7 @@ describe("CodexService", () => {
       service.selectAdaptation({ ...behaviorSummary, sprintRatio: 0, frequentSprinting: false }),
     ).resolves.toEqual(decision());
 
-    const prompt = vi.mocked(processRunner).mock.calls[0][2];
-    const eligibleJson = prompt.match(/Eligible adaptations: (.+)$/m)?.[1];
-    expect(eligibleJson).toBeDefined();
-    const eligible = JSON.parse(eligibleJson as string) as AdaptationDecision[];
+    const eligible = eligibleAdaptationsFrom(processRunner);
     expect(eligible.map((entry) => entry.action)).not.toContain("increase_noise_sensitivity");
     expect(eligible).toContainEqual(
       expect.objectContaining({
@@ -222,6 +226,103 @@ describe("CodexService", () => {
         target: "east_corridor",
       }),
     );
+  });
+
+  it("lists combat adaptations as eligible when combat evidence exists", async () => {
+    const processRunner = runner({
+      exitCode: 0,
+      stdout: JSON.stringify(
+        decision({
+          action: "place_armed_response",
+          target: "security_room",
+          rationale: "The player relied on gun attacks in the security room.",
+        }),
+      ),
+      stderr: "",
+      timedOut: false,
+    });
+    const service = new CodexService({ executable: "codex-test", processRunner });
+    const combatHeavySummary: BehaviorSummary = {
+      ...behaviorSummary,
+      combat: {
+        primaryStyle: "hybrid",
+        favoriteCombatZone: "security_room",
+        gunAttackCount: 4,
+        meleeAttackCount: 2,
+        knockoutCount: 1,
+        killCount: 1,
+        bodyDiscoveryCount: 1,
+        healingUseCount: 0,
+        armedResponseTriggers: 1,
+      },
+    };
+
+    await expect(service.selectAdaptation(combatHeavySummary)).resolves.toMatchObject({
+      action: "place_armed_response",
+      target: "security_room",
+    });
+
+    expect(eligibleAdaptationsFrom(processRunner)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "place_armed_response", target: "security_room" }),
+        expect.objectContaining({ action: "improve_guard_cover", target: "security_room" }),
+        expect.objectContaining({ action: "reduce_ammo_availability", target: "global" }),
+        expect.objectContaining({ action: "increase_melee_caution", target: "security_room" }),
+        expect.objectContaining({ action: "add_body_checks", target: "security_room" }),
+        expect.objectContaining({ action: "increase_guard_durability", target: "global" }),
+      ]),
+    );
+  });
+
+  it("filters capped combat adaptations from eligible prompt choices", async () => {
+    const processRunner = runner({
+      exitCode: 0,
+      stdout: JSON.stringify(
+        decision({
+          action: "improve_guard_cover",
+          target: "security_room",
+          rationale: "The player relied on gun attacks in the security room.",
+        }),
+      ),
+      stderr: "",
+      timedOut: false,
+    });
+    const service = new CodexService({ executable: "codex-test", processRunner });
+    const gunSummary: BehaviorSummary = {
+      ...behaviorSummary,
+      mostUsedCorridor: null,
+      favoriteHidingSpot: null,
+      frequentSprinting: false,
+      successfulEscapes: 0,
+      combat: {
+        primaryStyle: "gun",
+        favoriteCombatZone: "security_room",
+        gunAttackCount: 3,
+        meleeAttackCount: 0,
+        knockoutCount: 0,
+        killCount: 0,
+        bodyDiscoveryCount: 0,
+        healingUseCount: 0,
+        armedResponseTriggers: 0,
+      },
+    };
+
+    await expect(
+      service.selectAdaptation(gunSummary, [
+        decision({ action: "place_armed_response", target: "security_room" }),
+        decision({ action: "place_armed_response", target: "security_room" }),
+        decision({ action: "reduce_ammo_availability", target: "global" }),
+        decision({ action: "reduce_ammo_availability", target: "global" }),
+      ]),
+    ).resolves.toMatchObject({
+      action: "improve_guard_cover",
+      target: "security_room",
+    });
+
+    const eligibleActions = eligibleAdaptationsFrom(processRunner).map((entry) => entry.action);
+    expect(eligibleActions).not.toContain("place_armed_response");
+    expect(eligibleActions).not.toContain("reduce_ammo_availability");
+    expect(eligibleActions).toContain("improve_guard_cover");
   });
 
   it("lists maintain security posture when every specific eligible adaptation is capped", async () => {
