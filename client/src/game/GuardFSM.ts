@@ -49,6 +49,7 @@ function moveToward(position: Vector, target: Vector, speed: number): { position
 export type GuardRuntime = GuardStateSnapshot & {
   searchUntilMs: number;
   chaseUntilMs: number;
+  distractionUntilMs: number;
   lastSeenPlayerPosition: Vector | null;
 };
 
@@ -66,6 +67,7 @@ export class GuardFSM {
       inspectionTarget: null,
       searchUntilMs: 0,
       chaseUntilMs: 0,
+      distractionUntilMs: 0,
       lastSeenPlayerPosition: null,
     }));
 
@@ -82,6 +84,7 @@ export class GuardFSM {
         inspectionTarget: null,
         searchUntilMs: 0,
         chaseUntilMs: 0,
+        distractionUntilMs: 0,
         lastSeenPlayerPosition: null,
       });
     }
@@ -156,6 +159,7 @@ export class GuardFSM {
       if (moved.facing.x !== 0 || moved.facing.y !== 0) {
         guard.facing = moved.facing;
       }
+      // Retained as chase pressure/proximity telemetry; HP loss handles failure.
       guard.captureProgress = canSeePlayer ? Math.min(1, guard.captureProgress + captureRate) : guard.captureProgress;
       return false;
     }

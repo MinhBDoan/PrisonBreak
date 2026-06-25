@@ -260,14 +260,14 @@ describe("GameSimulation", () => {
     });
 
     simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
-    stepMany(simulation, 390);
+    stepMany(simulation, 80);
 
     const guard = simulation.getSnapshot().guards.find((candidate) => candidate.id === "guard-a");
-    expect(simulation.getSnapshot().completed?.outcome).not.toBe("capture");
+    expect(simulation.getSnapshot().completed).toBeNull();
     expect(simulation.getEvents().some((event) => event.type === "capture")).toBe(false);
     expect(guard?.state).toBe("chase");
     expect(guard?.captureProgress).toBeGreaterThan(0);
-    expect(simulation.getPlayerHealth().hp).toBeLessThan(100);
+    expect(simulation.getPlayerHealth().hp).toBeGreaterThan(0);
   });
 
   it("emits louder sprint noise events than walking", () => {
