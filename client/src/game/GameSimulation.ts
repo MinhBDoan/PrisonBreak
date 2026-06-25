@@ -44,6 +44,9 @@ const pebblePickupRadius = 0.7;
 const pebbleThrowRange = 4;
 const pebbleNoiseRadius = 3.8;
 const pebbleFlightMs = 300;
+const guardContactDamage = 20;
+const guardContactCooldownMs = 1000;
+const guardContactRange = 0.5;
 
 type PendingPebbleImpact = {
   origin: Vector;
@@ -180,6 +183,7 @@ export class GameSimulation {
   private bodyState = createBodyState();
   private readonly collectedPebbles = new Set<string>();
   private readonly pendingPebbleImpacts: PendingPebbleImpact[] = [];
+  private readonly guardContactCooldowns = new Map<string, number>();
   private timeMs = 0;
   private completed: { outcome: RunOutcome; durationMs: number } | null = null;
 
@@ -225,7 +229,6 @@ export class GameSimulation {
         const finished = this.guardFsm.updateInspection(guard, this.timeMs);
         if (!finished && this.player.hiddenIn === guard.inspectionTarget) {
           this.recordDetection(guard.id, "hiding_inspection");
-          this.complete("capture");
         }
         continue;
       }
@@ -235,9 +238,8 @@ export class GameSimulation {
       if (canSeePlayer) {
         this.recordDetection(guard.id, "line_of_sight");
       }
-      if (this.guardFsm.updateAwareness(guard, canSeePlayer, this.player.position, this.timeMs)) {
-        this.complete("capture");
-      }
+      this.guardFsm.updateAwareness(guard, canSeePlayer, this.player.position, this.timeMs);
+      this.applyGuardContactPressure(guard, canSeePlayer);
     }
   }
 
@@ -629,6 +631,25 @@ export class GameSimulation {
       position: { ...this.player.position },
       payload: corridorId ? { guardId, reason, corridorId } : { guardId, reason },
     });
+  }
+
+  private applyGuardContactPressure(guard: GuardRuntime, canSeePlayer: boolean): void {
+    if (guard.state !== "chase" || !canSeePlayer || this.player.hiddenIn) {
+      return;
+    }
+
+    const distance = Math.hypot(guard.position.x - this.player.position.x, guard.position.y - this.player.position.y);
+    if (distance > guardContactRange) {
+      return;
+    }
+
+    const nextAllowedAt = this.guardContactCooldowns.get(guard.id) ?? 0;
+    if (this.timeMs < nextAllowedAt) {
+      return;
+    }
+
+    this.guardContactCooldowns.set(guard.id, this.timeMs + guardContactCooldownMs);
+    this.applyPlayerDamage(guardContactDamage);
   }
 
   private setAlertState(next: AlertState): void {

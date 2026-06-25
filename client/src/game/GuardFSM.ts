@@ -157,7 +157,7 @@ export class GuardFSM {
         guard.facing = moved.facing;
       }
       guard.captureProgress = canSeePlayer ? Math.min(1, guard.captureProgress + captureRate) : guard.captureProgress;
-      return guard.captureProgress >= 1;
+      return false;
     }
 
     guard.captureProgress = Math.max(0, guard.captureProgress - 0.02);

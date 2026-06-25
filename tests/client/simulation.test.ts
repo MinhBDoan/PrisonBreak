@@ -254,20 +254,20 @@ describe("GameSimulation", () => {
     expect(guard?.suspicion).toBe(0);
   });
 
-  it("captures the player after the chase threshold is sustained", () => {
+  it("keeps sustained detection as chase pressure without capture completion", () => {
     const simulation = new GameSimulation({
       guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
     });
 
     simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
-    stepMany(simulation, 300);
+    stepMany(simulation, 390);
 
-    expect(simulation.getSnapshot().completed).toBeNull();
-
-    stepMany(simulation, 90);
-
-    expect(simulation.getSnapshot().completed?.outcome).toBe("capture");
-    expect(simulation.getEvents().some((event) => event.type === "capture")).toBe(true);
+    const guard = simulation.getSnapshot().guards.find((candidate) => candidate.id === "guard-a");
+    expect(simulation.getSnapshot().completed?.outcome).not.toBe("capture");
+    expect(simulation.getEvents().some((event) => event.type === "capture")).toBe(false);
+    expect(guard?.state).toBe("chase");
+    expect(guard?.captureProgress).toBeGreaterThan(0);
+    expect(simulation.getPlayerHealth().hp).toBeLessThan(100);
   });
 
   it("emits louder sprint noise events than walking", () => {
@@ -430,6 +430,34 @@ describe("GameSimulation", () => {
         .getEvents()
         .some((event) => event.type === "detection" && event.payload.reason === "hiding_inspection"),
     ).toBe(true);
+    expect(simulation.getSnapshot().completed?.outcome).not.toBe("capture");
+  });
+
+  it("does not complete as capture when an inspected locker contains the player", () => {
+    const config: NextRunConfig = {
+      adaptations: [
+        {
+          action: "inspect_hiding_spot",
+          target: "locker_alpha",
+          level: 1,
+          rationale: "Player repeatedly hid in locker alpha.",
+        },
+      ],
+    };
+    const simulation = new GameSimulation({ nextRunConfig: config });
+    simulation.setPlayerPosition(prisonMap.hidingSpots[0].position);
+    simulation.step({ ...noInput, interact: true });
+
+    stepMany(simulation, 260);
+
+    expect(simulation.getSnapshot().player.hiddenIn).toBe("locker_alpha");
+    expect(simulation.getSnapshot().completed?.outcome).not.toBe("capture");
+    expect(
+      simulation
+        .getEvents()
+        .some((event) => event.type === "detection" && event.payload.reason === "hiding_inspection"),
+    ).toBe(true);
+    expect(simulation.getEvents().some((event) => event.type === "capture")).toBe(false);
   });
 
   it("applies patrol, noise, and reserve guard adaptations", () => {

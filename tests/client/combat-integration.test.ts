@@ -95,6 +95,25 @@ describe("simulation health outcome", () => {
     expect(simulation.getEvents().some((event) => event.type === "death")).toBe(true);
   });
 
+  it("repeated active guard contact reduces player HP to zero and records death", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
+
+    stepMany(simulation, 600);
+
+    expect(simulation.getPlayerHealth()).toEqual({
+      entityId: "player",
+      hp: 0,
+      maxHp: 100,
+      isDown: true,
+    });
+    expect(simulation.getSnapshot().completed?.outcome).toBe("death");
+    expect(simulation.getEvents().some((event) => event.type === "death")).toBe(true);
+    expect(simulation.getEvents().some((event) => event.type === "capture")).toBe(false);
+  });
+
   it("protects stored run events from nested payload mutation", () => {
     const simulation = new GameSimulation();
     simulation.setPlayerPosition(prisonMap.pebbles[0].position);
