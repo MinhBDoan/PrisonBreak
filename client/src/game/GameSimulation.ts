@@ -1,6 +1,7 @@
 import type { ActiveAdaptation, RunEvent, RunOutcome } from "../../../shared/contracts";
 import { DetectionSystem } from "./DetectionSystem";
 import { GuardFSM, type GuardRuntime } from "./GuardFSM";
+import { applyDamage, createHealthState } from "./HealthSystem";
 import { HidingSystem } from "./HidingSystem";
 import { collidesWithSolidObjects, corridorAt, isWall, prisonMap } from "./map";
 import { NoiseSystem, type NoiseEvent } from "./NoiseSystem";
@@ -9,6 +10,7 @@ import { RunEventCollector } from "./RunEventCollector";
 import type {
   AppliedAdaptations,
   GuardOverride,
+  HealthState,
   PlayerState,
   PrisonMap,
   SimulationInput,
@@ -124,6 +126,7 @@ export class GameSimulation {
     hasKey: false,
     hiddenIn: null,
   };
+  private playerHealth = createHealthState("player", 100);
   private guards: GuardRuntime[];
   private timeMs = 0;
   private completed: { outcome: RunOutcome; durationMs: number } | null = null;
@@ -177,6 +180,21 @@ export class GameSimulation {
 
   setPlayerPosition(position: Vector): void {
     this.player.position = { ...position };
+  }
+
+  applyPlayerDamage(amount: number): void {
+    if (this.completed) {
+      return;
+    }
+
+    this.playerHealth = applyDamage(this.playerHealth, amount);
+    if (this.playerHealth.isDown) {
+      this.complete("death");
+    }
+  }
+
+  getPlayerHealth(): HealthState {
+    return { ...this.playerHealth };
   }
 
   getSnapshot(): SimulationSnapshot {

@@ -66,6 +66,13 @@ export type PlayerState = {
   pebbles: number;
 };
 
+export interface HealthState {
+  entityId: string;
+  hp: number;
+  maxHp: number;
+  isDown: boolean;
+}
+
 export type GuardStateSnapshot = {
   id: string;
   position: Vector;
