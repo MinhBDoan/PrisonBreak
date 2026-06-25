@@ -10,6 +10,20 @@ const COMBAT_ZONES = {
   exit_hall: { minX: 17, maxX: 24, minY: 7, maxY: 10 },
   east_corridor: { minX: 17, maxX: 24, minY: 4, maxY: 10 },
 } as const;
+const GUN_WEAPON_IDS = new Set([
+  "pistol",
+  "smg",
+  "shotgun",
+  "assault_rifle",
+  "suppressed_pistol",
+]);
+const MELEE_WEAPON_IDS = new Set([
+  "fists",
+  "makeshift_knife",
+  "baton",
+  "bat",
+  "pipe",
+]);
 
 function payloadId(event: RunEvent, key: string): string | null {
   const value = event.payload[key];
@@ -40,6 +54,17 @@ function primaryStyle(gunAttackCount: number, meleeAttackCount: number): Behavio
   if (gunAttackCount > 0 && meleeAttackCount === 0) return "gun";
   if (meleeAttackCount > 0 && gunAttackCount === 0) return "melee";
   return "hybrid";
+}
+
+function attackStyle(event: RunEvent): "gun" | "melee" | null {
+  const attackType = payloadId(event, "attackType");
+  if (attackType === "gun") return "gun";
+  if (attackType === "melee" || attackType === "unarmed") return "melee";
+
+  const weaponId = payloadId(event, "weaponId");
+  if (weaponId && GUN_WEAPON_IDS.has(weaponId)) return "gun";
+  if (weaponId && MELEE_WEAPON_IDS.has(weaponId)) return "melee";
+  return null;
 }
 
 export class AnalyticsService {
@@ -80,9 +105,9 @@ export class AnalyticsService {
           }
         }
         if (event.type === "attack") {
-          const attackType = payloadId(event, "attackType");
-          if (attackType === "gun") gunAttackCount += 1;
-          if (attackType === "melee" || attackType === "unarmed") meleeAttackCount += 1;
+          const style = attackStyle(event);
+          if (style === "gun") gunAttackCount += 1;
+          if (style === "melee") meleeAttackCount += 1;
         }
         if (event.type === "knockout") knockoutCount += 1;
         if (event.type === "kill") killCount += 1;

@@ -40,6 +40,18 @@ export type RunEvent = z.infer<typeof RunEventSchema>;
 export const RunOutcomeSchema = z.enum(["escape", "capture", "death"]);
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 
+const defaultCombatSummary = {
+  primaryStyle: "stealth" as const,
+  favoriteCombatZone: null,
+  gunAttackCount: 0,
+  meleeAttackCount: 0,
+  knockoutCount: 0,
+  killCount: 0,
+  bodyDiscoveryCount: 0,
+  healingUseCount: 0,
+  armedResponseTriggers: 0,
+};
+
 export const BehaviorSummarySchema = z.object({
   corridorScores: z.record(z.number().nonnegative()),
   hidingSpotScores: z.record(z.number().nonnegative()),
@@ -59,7 +71,7 @@ export const BehaviorSummarySchema = z.object({
     bodyDiscoveryCount: z.number().nonnegative(),
     healingUseCount: z.number().nonnegative(),
     armedResponseTriggers: z.number().nonnegative(),
-  }),
+  }).default(defaultCombatSummary),
 });
 export type BehaviorSummary = z.infer<typeof BehaviorSummarySchema>;
 

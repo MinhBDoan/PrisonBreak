@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { GameSimulation } from "../../client/src/game/GameSimulation";
 import { createDatabase } from "../../service/src/db";
 import { EventRepository } from "../../service/src/repositories/EventRepository";
 import { RunRepository } from "../../service/src/repositories/RunRepository";
 import { AnalyticsService } from "../../service/src/services/AnalyticsService";
 import { AdaptationValidator } from "../../service/src/services/AdaptationValidator";
 import type { AdaptationDecision } from "../../shared/adaptations";
-import type { BehaviorSummary, RunEvent, RunOutcome } from "../../shared/contracts";
+import {
+  BehaviorSummarySchema,
+  type BehaviorSummary,
+  type RunEvent,
+  type RunOutcome,
+} from "../../shared/contracts";
 
 function event(
   type: RunEvent["type"],
@@ -112,6 +118,67 @@ describe("combat analytics", () => {
         event("attack", { attackType: "melee", corridorId: "east_corridor" }),
       ]).combat.primaryStyle,
     ).toBe("hybrid");
+  });
+
+  it("classifies production-shaped attack events by weapon id", () => {
+    const summary = summarize([
+      event("attack", { weaponId: "pistol", corridorId: "east_corridor" }),
+      event("attack", { weaponId: "suppressed_pistol", corridorId: "east_corridor" }),
+      event("attack", { weaponId: "fists", corridorId: "east_corridor" }),
+      event("attack", { weaponId: "makeshift_knife", corridorId: "east_corridor" }),
+    ]);
+
+    expect(summary.combat).toMatchObject({
+      primaryStyle: "hybrid",
+      favoriteCombatZone: "east_corridor",
+      gunAttackCount: 2,
+      meleeAttackCount: 2,
+    });
+  });
+
+  it("counts attack events emitted by GameSimulation", () => {
+    const database = createDatabase(":memory:");
+    const runs = new RunRepository(database);
+    const events = new EventRepository(database);
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+
+    simulation.playerAttack("guard-a", "pistol");
+    seedCompletedRun(runs, events, "capture", simulation.getEvents());
+
+    expect(new AnalyticsService(events).summarize(1).combat).toMatchObject({
+      primaryStyle: "gun",
+      favoriteCombatZone: "west_corridor",
+      gunAttackCount: 1,
+      meleeAttackCount: 0,
+    });
+  });
+
+  it("defaults legacy behavior summaries without combat to stealth combat", () => {
+    const parsed = BehaviorSummarySchema.parse({
+      corridorScores: { east_corridor: 2 },
+      hidingSpotScores: {},
+      mostUsedCorridor: "east_corridor",
+      favoriteHidingSpot: null,
+      sprintRatio: 0,
+      frequentSprinting: false,
+      detections: 0,
+      successfulEscapes: 0,
+    });
+
+    expect(parsed.combat).toEqual({
+      primaryStyle: "stealth",
+      favoriteCombatZone: null,
+      gunAttackCount: 0,
+      meleeAttackCount: 0,
+      knockoutCount: 0,
+      killCount: 0,
+      bodyDiscoveryCount: 0,
+      healingUseCount: 0,
+      armedResponseTriggers: 0,
+    });
   });
 });
 
