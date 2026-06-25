@@ -1,4 +1,7 @@
 import type { ActiveAdaptation, RunEvent, RunOutcome } from "../../../shared/contracts";
+import { createAlertState, registerBodyDiscovery, registerNoise } from "./AlertSystem";
+import { addBody, createBodyState } from "./BodySystem";
+import { resolveAttack } from "./CombatSystem";
 import { DetectionSystem } from "./DetectionSystem";
 import { GuardFSM, type GuardRuntime } from "./GuardFSM";
 import { applyDamage, createHealthState } from "./HealthSystem";
@@ -9,6 +12,9 @@ import { ObjectiveSystem } from "./ObjectiveSystem";
 import { RunEventCollector } from "./RunEventCollector";
 import type {
   AppliedAdaptations,
+  AlertState,
+  BodySystemState,
+  CombatResult,
   GuardOverride,
   HealthState,
   PlayerState,
@@ -17,6 +23,7 @@ import type {
   SimulationOptions,
   SimulationSnapshot,
   Vector,
+  WeaponId,
 } from "./types";
 
 const stepMs = 100;
@@ -27,6 +34,7 @@ const noiseSuspicion = {
   walk: 0.08,
   sprint: 0.18,
   pebble: 0.22,
+  weapon: 0.3,
 };
 const noiseChaseDurationMs = 3000;
 const wallCollisionRadius = 0.35;
@@ -158,6 +166,9 @@ export class GameSimulation {
   };
   private playerHealth = createHealthState("player", 100);
   private guards: GuardRuntime[];
+  private readonly guardHealth = new Map<string, HealthState>();
+  private alertState = createAlertState();
+  private bodyState = createBodyState();
   private readonly collectedPebbles = new Set<string>();
   private readonly pendingPebbleImpacts: PendingPebbleImpact[] = [];
   private timeMs = 0;
@@ -175,6 +186,9 @@ export class GameSimulation {
       GuardFSM.createInitialGuards(this.map, this.adaptations),
       options.guardOverrides ?? [],
     );
+    for (const guard of this.guards) {
+      this.guardHealth.set(guard.id, createHealthState(guard.id, 45));
+    }
   }
 
   step(input: SimulationInput): void {
@@ -194,6 +208,10 @@ export class GameSimulation {
 
     this.updateLearnedInspections();
     for (const guard of this.guards) {
+      if (this.bodyState.bodies[guard.id]) {
+        continue;
+      }
+
       if (guard.state === "search") {
         const finished = this.guardFsm.updateInspection(guard, this.timeMs);
         if (!finished && this.player.hiddenIn === guard.inspectionTarget) {
@@ -231,6 +249,97 @@ export class GameSimulation {
 
   getPlayerHealth(): HealthState {
     return { ...this.playerHealth };
+  }
+
+  getGuardHealth(guardId: string): HealthState | null {
+    const health = this.guardHealth.get(guardId);
+    return health ? { ...health } : null;
+  }
+
+  getAlertState(): AlertState {
+    return { ...this.alertState };
+  }
+
+  getBodyState(): BodySystemState {
+    return {
+      bodies: Object.fromEntries(
+        Object.entries(this.bodyState.bodies).map(([guardId, body]) => [
+          guardId,
+          {
+            ...body,
+            position: { ...body.position },
+          },
+        ]),
+      ),
+    };
+  }
+
+  playerAttack(targetGuardId: string, weaponId: WeaponId): CombatResult | null {
+    if (this.completed || this.player.hiddenIn || this.bodyState.bodies[targetGuardId]) {
+      return null;
+    }
+
+    const target = this.guards.find((guard) => guard.id === targetGuardId);
+    const targetHealth = this.guardHealth.get(targetGuardId);
+    if (!target || !targetHealth) {
+      return null;
+    }
+
+    this.events.record(this.timeMs, {
+      type: "attack",
+      position: { ...this.player.position },
+      payload: { attackerId: "player", targetId: targetGuardId, weaponId },
+    });
+
+    const result = resolveAttack({
+      attackerId: "player",
+      targetId: targetGuardId,
+      weaponId,
+      attackerPosition: this.player.position,
+      targetPosition: target.position,
+      targetHealth,
+      moving: false,
+      lineOfFireBlocked: !this.detection.hasClearRay(this.player.position, target.position),
+    });
+
+    const noise: NoiseEvent = {
+      position: { ...this.player.position },
+      radius: result.noise,
+      source: "weapon",
+    };
+    this.events.record(this.timeMs, {
+      type: "noise",
+      position: noise.position,
+      payload: { radius: noise.radius, source: noise.source, weaponId },
+    });
+    this.propagateNoise(noise);
+    this.setAlertState(registerNoise(this.alertState, result.noise));
+
+    if (result.hit) {
+      const updatedHealth = applyDamage(targetHealth, result.damage);
+      this.guardHealth.set(targetGuardId, updatedHealth);
+      this.events.record(this.timeMs, {
+        type: "damage_dealt",
+        position: { ...target.position },
+        payload: { attackerId: "player", targetId: targetGuardId, weaponId, damage: result.damage },
+      });
+    }
+
+    if (result.bodyState === "knocked_out" || result.bodyState === "dead") {
+      this.bodyState = addBody(this.bodyState, {
+        guardId: targetGuardId,
+        bodyState: result.bodyState,
+        position: { ...target.position },
+      });
+      this.events.record(this.timeMs, {
+        type: result.bodyState === "dead" ? "kill" : "knockout",
+        position: { ...target.position },
+        payload: { attackerId: "player", targetId: targetGuardId, weaponId },
+      });
+      this.setAlertState(registerBodyDiscovery(this.alertState, result.bodyState));
+    }
+
+    return result;
   }
 
   getSnapshot(): SimulationSnapshot {
@@ -327,6 +436,10 @@ export class GameSimulation {
 
   private propagateNoise(noise: NoiseEvent): void {
     for (const guard of this.guards) {
+      if (this.bodyState.bodies[guard.id]) {
+        continue;
+      }
+
       if (guard.state === "search" || guard.state === "chase") {
         continue;
       }
@@ -477,7 +590,9 @@ export class GameSimulation {
       }
 
       const spot = this.map.hidingSpots.find((candidate) => candidate.id === spotId);
-      const guard = this.guards.find((candidate) => candidate.state === "patrol" || candidate.state === "return");
+      const guard = this.guards.find(
+        (candidate) => !this.bodyState.bodies[candidate.id] && (candidate.state === "patrol" || candidate.state === "return"),
+      );
       if (!spot || !guard) {
         continue;
       }
@@ -499,6 +614,18 @@ export class GameSimulation {
       position: { ...this.player.position },
       payload: corridorId ? { guardId, reason, corridorId } : { guardId, reason },
     });
+  }
+
+  private setAlertState(next: AlertState): void {
+    const previous = this.alertState;
+    this.alertState = next;
+    if (previous.level !== next.level) {
+      this.events.record(this.timeMs, {
+        type: "alert_changed",
+        position: { ...this.player.position },
+        payload: { from: previous.level, to: next.level, pressure: next.pressure },
+      });
+    }
   }
 
   private complete(outcome: RunOutcome): void {

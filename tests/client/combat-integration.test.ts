@@ -7,6 +7,19 @@ import {
   useHealingItem,
 } from "../../client/src/game/HealthSystem";
 import { prisonMap } from "../../client/src/game/map";
+import type { SimulationInput } from "../../client/src/game/types";
+
+const noInput: SimulationInput = {
+  direction: { x: 0, y: 0 },
+  sprint: false,
+  interact: false,
+};
+
+function stepMany(simulation: GameSimulation, count: number, input = noInput): void {
+  for (let i = 0; i < count; i += 1) {
+    simulation.step(input);
+  }
+}
 
 describe("health and healing", () => {
   it("only downs an entity when damage reaches zero HP", () => {
@@ -104,5 +117,85 @@ describe("simulation health outcome", () => {
       x: 5,
       y: 5,
     });
+  });
+});
+
+describe("simulation combat integration", () => {
+  it("pistol attack records attack noise, raises alert, and leaves the run active", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+
+    const result = simulation.playerAttack("guard-a", "pistol");
+
+    expect(result?.hit).toBe(true);
+    expect(simulation.getGuardHealth("guard-a")).toEqual({
+      entityId: "guard-a",
+      hp: 10,
+      maxHp: 45,
+      isDown: false,
+    });
+    expect(simulation.getAlertState().level).not.toBe("calm");
+    expect(simulation.getSnapshot().completed).toBeNull();
+    expect(simulation.getEvents().some((event) => event.type === "attack")).toBe(true);
+    expect(
+      simulation
+        .getEvents()
+        .some((event) => event.type === "noise" && event.payload.source === "weapon" && event.payload.weaponId === "pistol"),
+    ).toBe(true);
+  });
+
+  it("baton attacks can knock out a guard body and skip that guard's capture updates", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+
+    simulation.playerAttack("guard-a", "baton");
+    const result = simulation.playerAttack("guard-a", "baton");
+    stepMany(simulation, 400);
+
+    expect(result?.bodyState).toBe("knocked_out");
+    expect(simulation.getBodyState().bodies["guard-a"]).toEqual({
+      guardId: "guard-a",
+      bodyState: "knocked_out",
+      position: { x: 3.2, y: 2.5 },
+    });
+    expect(simulation.getEvents().some((event) => event.type === "knockout")).toBe(true);
+    expect(simulation.getSnapshot().completed).toBeNull();
+  });
+
+  it("lethal pipe attacks create a dead body and kill event", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+
+    simulation.playerAttack("guard-a", "pipe");
+    const result = simulation.playerAttack("guard-a", "pipe");
+
+    expect(result?.bodyState).toBe("dead");
+    expect(simulation.getBodyState().bodies["guard-a"]?.bodyState).toBe("dead");
+    expect(simulation.getEvents().some((event) => event.type === "kill")).toBe(true);
+  });
+
+  it("attacking through blocked line of fire misses but still records attack noise and alert", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 8.5, y: 4.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 10.8, y: 4.5 });
+
+    const result = simulation.playerAttack("guard-a", "pistol");
+
+    expect(result?.hit).toBe(false);
+    expect(simulation.getGuardHealth("guard-a")?.hp).toBe(45);
+    expect(simulation.getAlertState().level).not.toBe("calm");
+    expect(simulation.getEvents().some((event) => event.type === "attack")).toBe(true);
+    expect(
+      simulation
+        .getEvents()
+        .some((event) => event.type === "noise" && event.payload.source === "weapon" && event.payload.weaponId === "pistol"),
+    ).toBe(true);
   });
 });
