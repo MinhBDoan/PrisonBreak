@@ -28,6 +28,14 @@ export const prisonMap: PrisonMap = {
   },
   key: { id: "security_key", position: { x: 22.5, y: 2.5 } },
   exit: { id: "locked_exit", position: { x: 24.5, y: 9.5 } },
+  pebbles: [
+    { id: "pebble_alpha", position: { x: 3.5, y: 5.5 } },
+    { id: "pebble_bravo", position: { x: 12.5, y: 9.5 } },
+    { id: "pebble_charlie", position: { x: 18.5, y: 6.5 } },
+  ],
+  weaponPickups: [
+    { id: "security_pistol", weaponId: "pistol", position: { x: 21.5, y: 2.5 } },
+  ],
   hidingSpots: [
     { id: "locker_alpha", type: "locker", position: { x: 10.5, y: 4.5 } },
     { id: "locker_bravo", type: "locker", position: { x: 20.5, y: 8.5 } },

@@ -47,6 +47,12 @@ function interactionPrompt(snapshot: SimulationSnapshot): string {
   if (nearPebble) {
     return "Press E to pick up pebble";
   }
+  const nearWeapon = snapshot.weaponPickups.find(
+    (pickup) => !pickup.collected && distance(pickup.position, snapshot.player.position) < 0.75,
+  );
+  if (nearWeapon) {
+    return `Press E to pick up ${weapons[nearWeapon.weaponId].label}`;
+  }
   if (distance(prisonMap.exit.position, snapshot.player.position) < 0.9) {
     return snapshot.objectives.hasKey ? "Press E to unlock exit" : "Find the key before using the exit";
   }

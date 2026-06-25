@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
+import { prisonMap } from "../../client/src/game/map";
 import { createHudModel, Hud } from "../../client/src/ui/Hud";
 
 describe("createHudModel", () => {
@@ -16,8 +17,8 @@ describe("createHudModel", () => {
       healthLabel: "75 / 100",
       healthPercent: 75,
       meleeLabel: "Makeshift Knife",
-      gunLabel: "Pistol",
-      ammoLabel: "6 / 12",
+      gunLabel: "No gun",
+      ammoLabel: "-",
       healingItemsLabel: "1",
       alertLabel: "Calm",
       alertTone: "neutral",
@@ -52,8 +53,10 @@ describe("createHudModel", () => {
     expect(root.innerHTML).not.toContain("<img");
   });
 
-  it("renders a bottom equipment bar with weapon slots and ammo", () => {
+  it("renders a bottom equipment bar with weapon slots and ammo after pickup", () => {
     const simulation = new GameSimulation();
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
     const root = {
       innerHTML: "",
       classList: { add() {} },

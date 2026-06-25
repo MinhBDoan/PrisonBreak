@@ -39,6 +39,12 @@ export type Pebble = {
   position: Vector;
 };
 
+export type WeaponPickup = {
+  id: string;
+  weaponId: WeaponId;
+  position: Vector;
+};
+
 export type PatrolPoint = Vector & {
   corridor: CorridorId;
 };
@@ -56,6 +62,7 @@ export type PrisonMap = {
   key: ObjectivePoint;
   exit: ObjectivePoint;
   pebbles: Pebble[];
+  weaponPickups: WeaponPickup[];
   hidingSpots: HidingSpot[];
   coverObjects: CoverObject[];
   patrolRoutes: PatrolRoute[];
@@ -137,6 +144,7 @@ export type SimulationSnapshot = {
     exitUnlocked: boolean;
   };
   pebbles: Array<Pebble & { collected: boolean }>;
+  weaponPickups: Array<WeaponPickup & { collected: boolean }>;
   completed: { outcome: RunOutcome; durationMs: number } | null;
   adaptations: AppliedAdaptations;
 };

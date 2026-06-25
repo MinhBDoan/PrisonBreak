@@ -1,6 +1,6 @@
 import type Phaser from "phaser";
 import { prisonMap } from "../game/map";
-import type { GuardStateSnapshot, HidingSpot, SimulationSnapshot, Vector } from "../game/types";
+import type { GuardStateSnapshot, HidingSpot, SimulationSnapshot, Vector, WeaponPickup } from "../game/types";
 
 export const renderScale = 64;
 const noiseRippleCooldownMs = 500;
@@ -18,7 +18,7 @@ export type VisionConeDescriptor = {
 
 export type EntityDescriptor = {
   id: string;
-  kind: "player" | "guard" | "hidingSpot" | "key" | "exit" | "pebble";
+  kind: "player" | "guard" | "hidingSpot" | "key" | "exit" | "pebble" | "weaponPickup";
   x: number;
   y: number;
 };
@@ -38,6 +38,7 @@ export type RenderDescriptors = {
   hidingSpots: Array<EntityDescriptor & { type: HidingSpot["type"] }>;
   coverObjects: Array<EntityDescriptor & { width: number; height: number }>;
   pebbles: Array<EntityDescriptor & { collected: boolean }>;
+  weaponPickups: Array<EntityDescriptor & { collected: boolean; weaponId: WeaponPickup["weaponId"] }>;
   objectives: {
     key: EntityDescriptor & { collected: boolean };
     exit: EntityDescriptor & { unlocked: boolean };
@@ -55,6 +56,7 @@ type RenderObjects = {
   hidingSpots: Map<string, Phaser.GameObjects.Rectangle>;
   coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
   pebbles: Map<string, Phaser.GameObjects.Arc>;
+  weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
   aimLine?: Phaser.GameObjects.Graphics;
   aimMarker?: Phaser.GameObjects.Arc;
   throwPebble?: Phaser.GameObjects.Arc;
@@ -182,6 +184,14 @@ export class GameRenderer {
         y: world(pebble.position.y),
         collected: pebble.collected,
       })),
+      weaponPickups: snapshot.weaponPickups.map((pickup) => ({
+        id: pickup.id,
+        kind: "weaponPickup",
+        x: world(pickup.position.x),
+        y: world(pickup.position.y),
+        weaponId: pickup.weaponId,
+        collected: pickup.collected,
+      })),
       objectives: {
         key: {
           id: prisonMap.key.id,
@@ -248,6 +258,7 @@ export class GameRenderer {
       hidingSpots: new Map(),
       coverObjects: new Map(),
       pebbles: new Map(),
+      weaponPickups: new Map(),
       aimLine: undefined,
       aimMarker: undefined,
       throwPebble: undefined,
@@ -298,6 +309,17 @@ export class GameRenderer {
       existing.setVisible(!pebble.collected);
       existing.setStrokeStyle(2, 0xefe1c8, 0.4);
       objects.pebbles.set(pebble.id, existing);
+    }
+
+    for (const pickup of descriptors.weaponPickups) {
+      const existing =
+        objects.weaponPickups.get(pickup.id) ??
+        scene.add.rectangle(pickup.x, pickup.y, 26, 12, 0x9aa7b4, 0.96);
+      existing.setPosition(pickup.x, pickup.y);
+      existing.setVisible(!pickup.collected);
+      existing.setRotation(-0.18);
+      existing.setStrokeStyle(2, 0xffd166, 0.78);
+      objects.weaponPickups.set(pickup.id, existing);
     }
 
     if (!objects.key) {

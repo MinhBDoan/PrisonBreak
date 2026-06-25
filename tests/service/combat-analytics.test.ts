@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
+import { prisonMap } from "../../client/src/game/map";
 import { createDatabase } from "../../service/src/db";
 import { EventRepository } from "../../service/src/repositories/EventRepository";
 import { RunRepository } from "../../service/src/repositories/RunRepository";
@@ -143,6 +144,8 @@ describe("combat analytics", () => {
     const simulation = new GameSimulation({
       guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
     });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
     simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
 
     simulation.playerAttack("guard-a", "pistol");

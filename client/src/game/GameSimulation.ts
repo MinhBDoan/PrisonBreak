@@ -43,6 +43,7 @@ const noiseChaseDurationMs = 3000;
 const wallCollisionRadius = 0.35;
 const playerObjectCollisionRadius = 0.28;
 const pebblePickupRadius = 0.7;
+const weaponPickupRadius = 0.75;
 const pebbleThrowRange = 4;
 const pebbleNoiseRadius = 3.8;
 const pebbleFlightMs = 300;
@@ -227,6 +228,7 @@ export class GameSimulation {
   private alertState = createAlertState();
   private bodyState = createBodyState();
   private readonly collectedPebbles = new Set<string>();
+  private readonly collectedWeaponPickups = new Set<string>();
   private readonly pendingPebbleImpacts: PendingPebbleImpact[] = [];
   private readonly pendingWakeups: PendingWakeup[] = [];
   private readonly guardContactCooldowns = new Map<string, number>();
@@ -245,8 +247,6 @@ export class GameSimulation {
       GuardFSM.createInitialGuards(this.map, this.adaptations),
       options.guardOverrides ?? [],
     );
-    this.playerWeapons = pickupWeapon(this.playerWeapons, "pistol");
-    this.playerWeapons = addReserveAmmo(this.playerWeapons, "nine_mm", Math.max(0, 12 - this.adaptations.ammoReductionLevel * 4));
     if (this.adaptations.armedResponseLevel > 0) {
       this.alertState = withPressure(this.alertState, this.adaptations.armedResponseLevel * 12);
     }
@@ -452,6 +452,11 @@ export class GameSimulation {
         ...pebble,
         position: { ...pebble.position },
         collected: this.collectedPebbles.has(pebble.id),
+      })),
+      weaponPickups: this.map.weaponPickups.map((pickup) => ({
+        ...pickup,
+        position: { ...pickup.position },
+        collected: this.collectedWeaponPickups.has(pickup.id),
       })),
       completed: this.completed ? { ...this.completed } : null,
       adaptations: {
@@ -730,6 +735,28 @@ export class GameSimulation {
     if (pebble) {
       this.collectedPebbles.add(pebble.id);
       this.player.pebbles += 1;
+      return;
+    }
+
+    const weaponPickup = this.map.weaponPickups.find(
+      (candidate) =>
+        !this.collectedWeaponPickups.has(candidate.id) &&
+        Math.hypot(candidate.position.x - this.player.position.x, candidate.position.y - this.player.position.y) <=
+          weaponPickupRadius,
+    );
+    if (weaponPickup) {
+      this.collectedWeaponPickups.add(weaponPickup.id);
+      this.playerWeapons = pickupWeapon(this.playerWeapons, weaponPickup.weaponId);
+      this.playerWeapons = addReserveAmmo(
+        this.playerWeapons,
+        weapons[weaponPickup.weaponId].ammoType,
+        Math.max(0, 12 - this.adaptations.ammoReductionLevel * 4),
+      );
+      this.events.record(this.timeMs, {
+        type: "weapon_pickup",
+        position: { ...weaponPickup.position },
+        payload: { pickupId: weaponPickup.id, weaponId: weaponPickup.weaponId },
+      });
       return;
     }
 

@@ -90,7 +90,7 @@ describe("simulation health outcome", () => {
     expect(snapshot.player.weapons).toMatchObject({
       meleeWeaponId: "makeshift_knife",
       primaryGunId: null,
-      sidearmId: "pistol",
+      sidearmId: null,
       healingItems: 1,
     });
 
@@ -102,7 +102,7 @@ describe("simulation health outcome", () => {
     expect(simulation.getSnapshot().player.health.hp).toBe(100);
     expect(simulation.getSnapshot().alert.pressure).toBe(0);
     expect(simulation.getSnapshot().player.weapons.healingItems).toBe(1);
-    expect(simulation.getSnapshot().player.weapons.reserveAmmoByType.nine_mm).toBe(12);
+    expect(simulation.getSnapshot().player.weapons.reserveAmmoByType.nine_mm).toBe(0);
   });
 
   it("records death when player damage reaches zero health", () => {
@@ -178,6 +178,8 @@ describe("simulation combat integration", () => {
     const simulation = new GameSimulation({
       guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
     });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
     simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
 
     const result = simulation.playerAttack("guard-a", "pistol");
@@ -244,6 +246,28 @@ describe("simulation combat integration", () => {
     expect(simulation.getEvents().some((event) => event.type === "attack")).toBe(false);
   });
 
+  it("picks up the security room pistol and starter ammo", () => {
+    const simulation = new GameSimulation();
+
+    expect(simulation.getSnapshot().player.weapons.sidearmId).toBeNull();
+    expect(simulation.getSnapshot().weaponPickups[0]).toMatchObject({
+      id: "security_pistol",
+      weaponId: "pistol",
+      collected: false,
+    });
+
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    expect(simulation.getSnapshot().player.weapons).toMatchObject({
+      sidearmId: "pistol",
+      ammoByWeapon: { pistol: 6 },
+      reserveAmmoByType: { nine_mm: 12 },
+    });
+    expect(simulation.getSnapshot().weaponPickups[0].collected).toBe(true);
+    expect(simulation.getEvents().some((event) => event.type === "weapon_pickup")).toBe(true);
+  });
+
   it("active guards discover knocked out guards and wake them up", () => {
     const simulation = new GameSimulation({
       guardOverrides: [
@@ -286,7 +310,9 @@ describe("simulation combat integration", () => {
       bodyCheckLevel: 1,
     });
     expect(snapshot.alert.pressure).toBe(24);
-    expect(snapshot.player.weapons.reserveAmmoByType.nine_mm).toBe(4);
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    expect(simulation.getSnapshot().player.weapons.reserveAmmoByType.nine_mm).toBe(4);
     expect(snapshot.guards[0].health?.maxHp).toBe(55);
   });
 
@@ -294,6 +320,8 @@ describe("simulation combat integration", () => {
     const simulation = new GameSimulation({
       guardOverrides: [{ id: "guard-a", position: { x: 8.5, y: 4.5 }, facing: { x: 1, y: 0 } }],
     });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
     simulation.setPlayerPosition({ x: 10.8, y: 4.5 });
 
     const result = simulation.playerAttack("guard-a", "pistol");
@@ -316,6 +344,8 @@ describe("simulation combat integration", () => {
         { id: "guard-b", position: { x: 5.5, y: 3.5 }, facing: { x: 1, y: 0 } },
       ],
     });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
     simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
 
     simulation.playerAttack("guard-a", "pistol");
