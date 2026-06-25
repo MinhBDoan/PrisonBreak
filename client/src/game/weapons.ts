@@ -1,6 +1,6 @@
 import type { WeaponId, WeaponStats } from "./types";
 
-export const weapons: Record<WeaponId, WeaponStats> = {
+export const weapons: { [K in WeaponId]: WeaponStats & { id: K } } = {
   fists: {
     id: "fists",
     label: "Fists",

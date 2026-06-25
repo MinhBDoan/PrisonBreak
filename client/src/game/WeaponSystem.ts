@@ -59,6 +59,15 @@ export function addReserveAmmo(state: WeaponState, ammoType: AmmoType, amount: n
 }
 
 export function startReload(state: WeaponState, weaponId: WeaponId): WeaponState {
+  if (state.reload) {
+    return {
+      ...state,
+      ammoByWeapon: { ...state.ammoByWeapon },
+      reserveAmmoByType: { ...state.reserveAmmoByType },
+      reload: { ...state.reload },
+    };
+  }
+
   const weapon = weapons[weaponId];
   const loaded = state.ammoByWeapon[weaponId] ?? 0;
   const reserve = state.reserveAmmoByType[weapon.ammoType];

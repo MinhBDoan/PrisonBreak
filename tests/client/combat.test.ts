@@ -70,4 +70,20 @@ describe("combat weapons and inventory", () => {
     expect(finished.ammoByWeapon.pistol).toBe(10);
     expect(finished.reserveAmmoByType.nine_mm).toBe(0);
   });
+
+  it("preserves an active reload when reload input repeats", () => {
+    const loaded = pickupWeapon(createInitialWeaponState(), "pistol");
+    const empty = { ...loaded, ammoByWeapon: { ...loaded.ammoByWeapon, pistol: 0 } };
+    const stocked = addReserveAmmo(empty, "nine_mm", 10);
+    const reloading = startReload(stocked, "pistol");
+    const partiallyReloaded = tickReload(reloading, 300);
+    const repeatedReload = startReload(partiallyReloaded, "pistol");
+
+    expect(repeatedReload).toEqual(partiallyReloaded);
+    expect(repeatedReload).not.toBe(partiallyReloaded);
+    expect(repeatedReload.reload).toEqual({
+      weaponId: "pistol",
+      remainingMs: weapons.pistol.reloadMs - 300,
+    });
+  });
 });
