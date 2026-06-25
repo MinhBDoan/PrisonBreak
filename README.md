@@ -1,6 +1,6 @@
 # Adaptive Prison Break
 
-Adaptive Prison Break is a Phaser 3 stealth vertical slice backed by a required local Node service. The browser client handles the playable prison wing, while the service owns SQLite persistence, cumulative analytics, and Codex CLI-selected guard adaptations between runs.
+Adaptive Prison Break is a Phaser 3 tactical stealth-combat vertical slice backed by a required local Node service. The browser client handles the playable prison wing, while the service owns SQLite persistence, cumulative analytics, and Codex CLI-selected guard adaptations between runs.
 
 ## Prerequisites
 
@@ -72,6 +72,8 @@ Useful focused checks:
 npm test -- tests/service/full-loop.test.ts
 npm test -- tests/contract/run-loop.test.ts
 npm test -- tests/client/simulation.test.ts
+npm test -- tests/client/combat-integration.test.ts
+npm test -- tests/service/combat-analytics.test.ts
 ```
 
 ## Controls
@@ -79,12 +81,15 @@ npm test -- tests/client/simulation.test.ts
 - `WASD`: move
 - `Shift`: sprint
 - `E`: interact with the key, exit, lockers, and shadow hiding spot
+- Left mouse: aim and throw a pebble when carrying one
 
-The objective is to collect the security key, reach the locked exit, and escape. Being detected long enough causes capture and ends the run.
+The objective is to collect the security key, reach the locked exit, and escape. Stealth remains the cleanest route: running, weapon noise, discovered bodies, and gunfire raise pressure. The player has health and loses the run when HP reaches zero.
+
+Combat is intentionally viable but costly. Punches and a makeshift knife are quietest, heavier melee weapons make more noise, and military guns are loud, limited by ammo, and more likely to draw armed response. Knocked-out guards stay down until another guard discovers and wakes them.
 
 ## Adaptive Loop
 
-Each completed run sends detailed timestamped events to the service. SQLite stores the run, event buffer, completion request hash, accepted adaptation, and report. Analytics weight recent runs more heavily with gradual decay, so changed behavior can lower older habit scores over time.
+Each completed run sends detailed timestamped events to the service. SQLite stores the run, event buffer, completion request hash, accepted adaptation, and report. Analytics weight recent runs more heavily with gradual decay, so changed behavior can lower older habit scores over time. Combat events also summarize gun reliance, melee reliance, knockouts, kills, body discoveries, healing, and armed response triggers.
 
 After a run completes:
 
@@ -105,6 +110,9 @@ Codex may choose only one of these validated actions after each run:
 - `inspect_hiding_spot`: adds guard checks near the favorite hiding spot, capped at level 2.
 - `increase_noise_sensitivity`: makes guards respond to sprint noise from farther away, capped at level 2.
 - `activate_reserve_guard`: activates the reserve guard near the exit after repeated successful escapes, capped at level 1.
+- `place_armed_response`: adds armed pressure to the most violent combat zone, capped at level 2.
+- `reduce_ammo_availability`: globally reduces gun sustain after repeated gun reliance, capped at level 2.
+- `increase_guard_durability`: globally makes guards harder to neutralize after repeated kills or body discoveries, capped at level 2.
 
 Invalid actions, invalid targets, cap violations, malformed JSON, CLI timeouts, non-zero CLI exits, and output-limit breaches block progression with a retryable service error.
 

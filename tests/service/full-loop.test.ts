@@ -70,6 +70,11 @@ describe("adaptive run full loop", () => {
         target: "west_corridor",
         rationale: "The west corridor remained the newer habit.",
       },
+      {
+        action: "place_armed_response",
+        target: "security_room",
+        rationale: "Gunfire and a death escalated combat in the security room.",
+      },
     ];
     const processRunner: ProcessRunner = vi.fn(async () => {
       const decision = decisions.shift();
@@ -165,6 +170,44 @@ describe("adaptive run full loop", () => {
     const updatedSummary = analytics.summarize();
     expect(updatedSummary.corridorScores.east_corridor).toBeLessThan(oldEastScore);
     expect(updatedSummary.mostUsedCorridor).toBe("west_corridor");
-    expect(processRunner).toHaveBeenCalledTimes(3);
+
+    const combatStart = StartRunResponseSchema.parse(
+      (await request(app).post("/api/runs").send({})).body,
+    );
+    await request(app)
+      .post(`/api/runs/${combatStart.runId}/complete`)
+      .send({
+        outcome: "death",
+        durationMs: 28_000,
+        idempotencyKey: "run-4-combat-death",
+        events: [
+          ...movementEvents("security_room", 3),
+          runEvent("attack", 12_000, { weaponId: "pistol", zoneId: "security_room" }),
+          runEvent("attack", 12_800, { weaponId: "pistol", zoneId: "security_room" }),
+          runEvent("kill", 13_100, { guardId: "guard-a", weaponId: "pistol", zoneId: "security_room" }),
+          runEvent("armed_response_triggered", 14_000, { zoneId: "security_room" }),
+          runEvent("death", 28_000, { reason: "hp_depleted" }),
+        ],
+      })
+      .expect(200);
+    const combatNextStart = StartRunResponseSchema.parse(
+      (await request(app).post("/api/runs").send({})).body,
+    );
+
+    expect(combatNextStart.config.adaptations).toContainEqual(
+      expect.objectContaining({
+        action: "place_armed_response",
+        target: "security_room",
+        level: 1,
+      }),
+    );
+    expect(analytics.summarize().combat).toMatchObject({
+      primaryStyle: "gun",
+      favoriteCombatZone: "security_room",
+      gunAttackCount: 2,
+      killCount: 1,
+      armedResponseTriggers: 1,
+    });
+    expect(processRunner).toHaveBeenCalledTimes(4);
   });
 });

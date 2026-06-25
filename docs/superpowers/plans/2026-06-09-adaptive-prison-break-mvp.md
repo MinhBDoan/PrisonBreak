@@ -324,7 +324,7 @@ Run: `npm test && npm run build`
 Expected: PASS.
 
 Run: `npm run dev:client`
-Expected: the map renders and a complete escape/capture loop is playable.
+Expected: the map renders and a complete escape/capture/death loop is playable.
 
 - [ ] **Step 6: Commit**
 
@@ -355,7 +355,7 @@ Validate every service response with shared Zod schemas. Expose `ready()`, `star
 
 - [ ] **Step 4: Implement report and retry flow**
 
-On escape or capture, submit events once using a generated idempotency key. Display outcome, learned habit, adaptation, recent trend, and `Begin Next Run`. On failure, display the error and Retry action without permitting the next run.
+On escape, capture, or death, submit events once using a generated idempotency key. Display outcome, learned habit, adaptation, recent trend, and `Begin Next Run`. On failure, display the error and Retry action without permitting the next run.
 
 - [ ] **Step 5: Verify and commit**
 
@@ -389,7 +389,7 @@ Expected: all tests pass, TypeScript reports no errors, and both client and serv
 
 Start client and service, then verify:
 
-- Run 1 can end by escape or capture in under five minutes.
+- Run 1 can end by escape, capture, or HP-depletion death in under five minutes.
 - The report blocks until Codex returns a valid action.
 - Run 2 visibly applies the selected adaptation.
 - Cover, three hiding spots, vision-cone reveal, noise ripples, key, and exit are readable.
@@ -408,4 +408,4 @@ Commit: `git add README.md .env.example package.json tests && git commit -m "doc
 - Every MVP acceptance criterion maps to Tasks 2–9.
 - Required SQLite persistence, detailed events, cumulative learning, decay, fairness caps, Codex selection, blocking failures, and idempotent retry are explicitly covered.
 - Gameplay remains deterministic and independent of Phaser.
-- No multiple maps, combat, procedural generation, arbitrary Codex rules, or cloud dependencies are introduced.
+- No multiple maps, procedural generation, arbitrary Codex rules, or cloud dependencies are introduced; combat remains scoped to tactical weapons, health, alert pressure, and analytics-backed adaptations.
