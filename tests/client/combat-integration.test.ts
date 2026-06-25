@@ -6,6 +6,7 @@ import {
   restoreHealth,
   useHealingItem,
 } from "../../client/src/game/HealthSystem";
+import { prisonMap } from "../../client/src/game/map";
 
 describe("health and healing", () => {
   it("only downs an entity when damage reaches zero HP", () => {
@@ -79,5 +80,29 @@ describe("simulation health outcome", () => {
     });
     expect(simulation.getSnapshot().completed?.outcome).toBe("death");
     expect(simulation.getEvents().some((event) => event.type === "death")).toBe(true);
+  });
+
+  it("protects stored run events from nested payload mutation", () => {
+    const simulation = new GameSimulation();
+    simulation.setPlayerPosition(prisonMap.pebbles[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    simulation.step({
+      direction: { x: 0, y: 0 },
+      sprint: false,
+      interact: false,
+      throwTarget: { x: 5, y: 5 },
+    });
+    const thrown = simulation.getEvents().find((event) => event.type === "pebble_throw");
+    const landing = thrown?.payload.landing;
+    expect(landing).toEqual({ x: 5, y: 5 });
+    if (typeof landing === "object" && landing !== null && "x" in landing) {
+      landing.x = 99;
+    }
+
+    expect(simulation.getEvents().find((event) => event.type === "pebble_throw")?.payload.landing).toEqual({
+      x: 5,
+      y: 5,
+    });
   });
 });
