@@ -9,6 +9,7 @@ export const RunEventSchema = z.object({
     "sprint",
     "hide_enter",
     "hide_exit",
+    "pebble_throw",
     "noise",
     "detection",
     "key_collected",

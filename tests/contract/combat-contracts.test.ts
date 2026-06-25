@@ -5,6 +5,18 @@ describe("combat run contracts", () => {
   it("accepts combat run events and death outcomes", () => {
     expect(
       RunEventSchema.parse({
+        type: "pebble_throw",
+        atMs: 500,
+        position: { x: 3, y: 6 },
+        payload: {
+          targetX: 8,
+          targetY: 6,
+        },
+      }).type,
+    ).toBe("pebble_throw");
+
+    expect(
+      RunEventSchema.parse({
         type: "attack",
         atMs: 1000,
         position: { x: 4, y: 7 },
