@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
-import { GameRenderer } from "../../client/src/render/GameRenderer";
+import { clampThrowTarget, GameRenderer } from "../../client/src/render/GameRenderer";
 import type { SimulationSnapshot } from "../../client/src/game/types";
 
 describe("GameRenderer", () => {
+  it("clamps pebble aim previews to the throw range", () => {
+    expect(clampThrowTarget({ x: 2, y: 2 }, { x: 4, y: 2 })).toEqual({ x: 4, y: 2 });
+    expect(clampThrowTarget({ x: 2, y: 2 }, { x: 20, y: 2 })).toEqual({ x: 6, y: 2 });
+    expect(clampThrowTarget({ x: 2, y: 2 }, { x: 20, y: 2 }, 1)).toEqual({ x: 3, y: 2 });
+  });
+
   it("maps simulation entities to stable render descriptors and shows patrol vision cones", () => {
     const simulation = new GameSimulation();
     const renderer = new GameRenderer();
@@ -81,6 +87,30 @@ describe("GameRenderer", () => {
     expect(descriptors.guards[1].visionCone?.alpha).toBeGreaterThan(
       descriptors.guards[0].visionCone?.alpha ?? 0,
     );
+  });
+
+  it("describes downed guards with body state and suppresses live vision cones", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+    simulation.playerAttack("guard-a", "baton");
+    simulation.playerAttack("guard-a", "baton");
+    const renderer = new GameRenderer();
+
+    const guard = renderer.describe(simulation.getSnapshot()).guards[0];
+
+    expect(guard).toMatchObject({
+      id: "guard-a",
+      bodyState: "knocked_out",
+      health: {
+        entityId: "guard-a",
+        hp: 0,
+        maxHp: 45,
+        isDown: true,
+      },
+      visionCone: null,
+    });
   });
 
   it("keeps one noise pulse and follows the latest player position during cooldown", () => {

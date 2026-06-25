@@ -4,6 +4,7 @@ import type { GuardStateSnapshot, HidingSpot, SimulationSnapshot, Vector } from 
 
 export const renderScale = 64;
 const noiseRippleCooldownMs = 500;
+const pebbleThrowRange = 4;
 
 export type VisionConeDescriptor = {
   x: number;
@@ -17,7 +18,7 @@ export type VisionConeDescriptor = {
 
 export type EntityDescriptor = {
   id: string;
-  kind: "player" | "guard" | "hidingSpot" | "key" | "exit";
+  kind: "player" | "guard" | "hidingSpot" | "key" | "exit" | "pebble";
   x: number;
   y: number;
 };
@@ -25,6 +26,8 @@ export type EntityDescriptor = {
 export type GuardDescriptor = EntityDescriptor & {
   kind: "guard";
   state: GuardStateSnapshot["state"];
+  bodyState: NonNullable<GuardStateSnapshot["bodyState"]>;
+  health: GuardStateSnapshot["health"];
   suspicion: number;
   visionCone: VisionConeDescriptor | null;
 };
@@ -34,6 +37,7 @@ export type RenderDescriptors = {
   guards: GuardDescriptor[];
   hidingSpots: Array<EntityDescriptor & { type: HidingSpot["type"] }>;
   coverObjects: Array<EntityDescriptor & { width: number; height: number }>;
+  pebbles: Array<EntityDescriptor & { collected: boolean }>;
   objectives: {
     key: EntityDescriptor & { collected: boolean };
     exit: EntityDescriptor & { unlocked: boolean };
@@ -50,6 +54,10 @@ type RenderObjects = {
   guardCones: Map<string, Phaser.GameObjects.Graphics>;
   hidingSpots: Map<string, Phaser.GameObjects.Rectangle>;
   coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
+  pebbles: Map<string, Phaser.GameObjects.Arc>;
+  aimLine?: Phaser.GameObjects.Graphics;
+  aimMarker?: Phaser.GameObjects.Arc;
+  throwPebble?: Phaser.GameObjects.Arc;
   key?: Phaser.GameObjects.Star;
   exit?: Phaser.GameObjects.Rectangle;
   noiseRipple?: Phaser.GameObjects.Arc;
@@ -57,6 +65,34 @@ type RenderObjects = {
 
 function world(value: number): number {
   return value * renderScale;
+}
+
+function arcControlPoint(from: Vector, to: Vector, lift: number): Vector {
+  return {
+    x: (from.x + to.x) / 2,
+    y: Math.min(from.y, to.y) - lift,
+  };
+}
+
+function pointOnQuadratic(from: Vector, control: Vector, to: Vector, progress: number): Vector {
+  const inverse = 1 - progress;
+  return {
+    x: inverse * inverse * from.x + 2 * inverse * progress * control.x + progress * progress * to.x,
+    y: inverse * inverse * from.y + 2 * inverse * progress * control.y + progress * progress * to.y,
+  };
+}
+
+export function clampThrowTarget(origin: Vector, target: Vector, maxRange = pebbleThrowRange): Vector {
+  const dx = target.x - origin.x;
+  const dy = target.y - origin.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance === 0 || distance <= maxRange) {
+    return { ...target };
+  }
+  return {
+    x: origin.x + (dx / distance) * maxRange,
+    y: origin.y + (dy / distance) * maxRange,
+  };
 }
 
 function angleOf(vector: Vector): number {
@@ -80,6 +116,9 @@ function interpolateColor(from: number, to: number, progress: number): number {
 }
 
 function guardCone(guard: GuardStateSnapshot): VisionConeDescriptor | null {
+  if (guard.bodyState && guard.bodyState !== "active") {
+    return null;
+  }
   const captureProgress = guard.state === "chase" ? guard.captureProgress : 0;
   const alertColor = interpolateColor(0xffc857, 0xff5f56, captureProgress);
   return {
@@ -116,6 +155,8 @@ export class GameRenderer {
         x: world(guard.position.x),
         y: world(guard.position.y),
         state: guard.state,
+        bodyState: guard.bodyState ?? "active",
+        health: guard.health ? { ...guard.health } : undefined,
         suspicion: guard.suspicion,
         visionCone: guardCone(guard),
       })),
@@ -133,6 +174,13 @@ export class GameRenderer {
         y: world(cover.position.y),
         width: world(cover.width),
         height: world(cover.height),
+      })),
+      pebbles: snapshot.pebbles.map((pebble) => ({
+        id: pebble.id,
+        kind: "pebble",
+        x: world(pebble.position.x),
+        y: world(pebble.position.y),
+        collected: pebble.collected,
       })),
       objectives: {
         key: {
@@ -199,6 +247,10 @@ export class GameRenderer {
       guardCones: new Map(),
       hidingSpots: new Map(),
       coverObjects: new Map(),
+      pebbles: new Map(),
+      aimLine: undefined,
+      aimMarker: undefined,
+      throwPebble: undefined,
       noiseRipple: undefined,
     };
   }
@@ -238,6 +290,16 @@ export class GameRenderer {
       objects.coverObjects.set(cover.id, existing);
     }
 
+    for (const pebble of descriptors.pebbles) {
+      const existing =
+        objects.pebbles.get(pebble.id) ??
+        scene.add.circle(pebble.x, pebble.y, 6, 0xb8aea1, 0.95);
+      existing.setPosition(pebble.x, pebble.y);
+      existing.setVisible(!pebble.collected);
+      existing.setStrokeStyle(2, 0xefe1c8, 0.4);
+      objects.pebbles.set(pebble.id, existing);
+    }
+
     if (!objects.key) {
       objects.key = scene.add.star(
         descriptors.objectives.key.x,
@@ -274,7 +336,8 @@ export class GameRenderer {
         objects.guards.set(guard.id, container);
       }
       container.setPosition(guard.x, guard.y);
-      container.setAlpha(guard.state === "search" ? 0.88 : 1);
+      container.setAlpha(guard.bodyState === "active" ? (guard.state === "search" ? 0.88 : 1) : 0.68);
+      container.setRotation(guard.bodyState === "dead" ? Math.PI / 2 : guard.bodyState === "knocked_out" ? -Math.PI / 2 : 0);
 
       let cone = objects.guardCones.get(guard.id);
       if (!cone) {
@@ -341,6 +404,115 @@ export class GameRenderer {
       ease: "Sine.easeOut",
       onComplete: () => {
         ripple.setAlpha(0).setRadius(10);
+      },
+    });
+  }
+
+  showPebbleAim(scene: Phaser.Scene, origin: Vector, target: Vector, maxRange = pebbleThrowRange): Vector {
+    if (!this.objects) {
+      this.mount(scene);
+    }
+    const objects = this.objects as RenderObjects;
+    const landing = clampThrowTarget(origin, target, maxRange);
+    const originX = world(origin.x);
+    const originY = world(origin.y);
+    const landingX = world(landing.x);
+    const landingY = world(landing.y);
+    const control = arcControlPoint({ x: originX, y: originY }, { x: landingX, y: landingY }, 42);
+    const arrowStart = pointOnQuadratic(
+      { x: originX, y: originY },
+      control,
+      { x: landingX, y: landingY },
+      0.88,
+    );
+    const angle = Math.atan2(landingY - arrowStart.y, landingX - arrowStart.x);
+    const arrowLength = 14;
+
+    const aimLine = objects.aimLine ?? scene.add.graphics();
+    objects.aimLine = aimLine;
+    aimLine.clear();
+    aimLine.lineStyle(3, 0xffd166, 0.72);
+    aimLine.beginPath();
+    aimLine.moveTo(originX, originY);
+    for (let point = 1; point <= 18; point += 1) {
+      const arcPoint = pointOnQuadratic(
+        { x: originX, y: originY },
+        control,
+        { x: landingX, y: landingY },
+        point / 18,
+      );
+      aimLine.lineTo(arcPoint.x, arcPoint.y);
+    }
+    aimLine.strokePath();
+    aimLine.lineStyle(2, 0xfff0b8, 0.86);
+    aimLine.beginPath();
+    aimLine.moveTo(landingX, landingY);
+    aimLine.lineTo(
+      landingX - Math.cos(angle - Math.PI / 5) * arrowLength,
+      landingY - Math.sin(angle - Math.PI / 5) * arrowLength,
+    );
+    aimLine.moveTo(landingX, landingY);
+    aimLine.lineTo(
+      landingX - Math.cos(angle + Math.PI / 5) * arrowLength,
+      landingY - Math.sin(angle + Math.PI / 5) * arrowLength,
+    );
+    aimLine.strokePath();
+    aimLine.setDepth(20);
+
+    const marker = objects.aimMarker ?? scene.add.circle(landingX, landingY, 10, 0xffd166, 0.12);
+    objects.aimMarker = marker;
+    marker
+      .setPosition(landingX, landingY)
+      .setVisible(true)
+      .setAlpha(0.9)
+      .setDepth(21)
+      .setStrokeStyle(2, 0xffd166, 0.75);
+
+    return landing;
+  }
+
+  hidePebbleAim(): void {
+    if (!this.objects) {
+      return;
+    }
+    this.objects.aimLine?.clear();
+    this.objects.aimMarker?.setVisible(false);
+  }
+
+  spawnPebbleThrow(
+    scene: Phaser.Scene,
+    origin: Vector,
+    landing: Vector,
+    onLanded: () => void,
+  ): void {
+    if (!this.objects) {
+      return;
+    }
+    const pebble = this.objects.throwPebble ?? scene.add.circle(0, 0, 5, 0xd8c3a5, 1);
+    this.objects.throwPebble = pebble;
+    scene.tweens.killTweensOf?.(pebble);
+    const start = { x: world(origin.x), y: world(origin.y) };
+    const end = { x: world(landing.x), y: world(landing.y) };
+    const control = arcControlPoint(start, end, 42);
+    const flight = { progress: 0 };
+    pebble
+      .setPosition(start.x, start.y)
+      .setScale(1)
+      .setAlpha(1)
+      .setVisible(true)
+      .setDepth(30);
+    scene.tweens.add({
+      targets: flight,
+      progress: 1,
+      duration: 280,
+      ease: "Sine.easeOut",
+      onUpdate: () => {
+        const position = pointOnQuadratic(start, control, end, flight.progress);
+        pebble.setPosition(position.x, position.y).setScale(1 + Math.sin(flight.progress * Math.PI) * 0.55);
+      },
+      onComplete: () => {
+        pebble.setVisible(false).setScale(1);
+        onLanded();
       },
     });
   }

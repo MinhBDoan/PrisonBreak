@@ -117,8 +117,12 @@ export type AppliedAdaptations = {
 
 export type SimulationSnapshot = {
   timeMs: number;
-  player: PlayerState;
+  player: PlayerState & {
+    health: HealthState;
+    weapons: WeaponState;
+  };
   guards: GuardStateSnapshot[];
+  alert: AlertState;
   objectives: {
     hasKey: boolean;
     exitUnlocked: boolean;

@@ -71,6 +71,40 @@ describe("health and healing", () => {
 });
 
 describe("simulation health outcome", () => {
+  it("includes cloned player combat state in snapshots", () => {
+    const simulation = new GameSimulation();
+
+    const snapshot = simulation.getSnapshot();
+
+    expect(snapshot.player.health).toEqual({
+      entityId: "player",
+      hp: 100,
+      maxHp: 100,
+      isDown: false,
+    });
+    expect(snapshot.alert).toEqual({
+      level: "calm",
+      pressure: 0,
+      armedResponseTriggered: false,
+    });
+    expect(snapshot.player.weapons).toMatchObject({
+      meleeWeaponId: "makeshift_knife",
+      primaryGunId: null,
+      sidearmId: null,
+      healingItems: 1,
+    });
+
+    snapshot.player.health.hp = 1;
+    snapshot.alert.pressure = 99;
+    snapshot.player.weapons.healingItems = 0;
+    snapshot.player.weapons.reserveAmmoByType.nine_mm = 99;
+
+    expect(simulation.getSnapshot().player.health.hp).toBe(100);
+    expect(simulation.getSnapshot().alert.pressure).toBe(0);
+    expect(simulation.getSnapshot().player.weapons.healingItems).toBe(1);
+    expect(simulation.getSnapshot().player.weapons.reserveAmmoByType.nine_mm).toBe(0);
+  });
+
   it("records death when player damage reaches zero health", () => {
     const simulation = new GameSimulation();
 

@@ -1,10 +1,29 @@
 import { prisonMap } from "../game/map";
 import type { SimulationSnapshot } from "../game/types";
 import type { BlockingError, CompleteRunResponse, RunOutcome } from "../../../shared/contracts";
+import { weapons } from "../game/weapons";
 
 export type HudBanner = {
   text: string;
   tone: "neutral" | "warn" | "danger" | "success";
+};
+
+export type HudModel = {
+  objective: string;
+  keyLabel: string;
+  pebbleCount: number;
+  healthLabel: string;
+  healthPercent: number;
+  meleeLabel: string;
+  gunLabel: string;
+  ammoLabel: string;
+  reloadLabel: string;
+  healingItemsLabel: string;
+  alertLabel: string;
+  alertTone: HudBanner["tone"];
+  suspicionPercent: number;
+  prompt: string;
+  banner: HudBanner;
 };
 
 function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -22,8 +41,17 @@ function interactionPrompt(snapshot: SimulationSnapshot): string {
   if (!snapshot.objectives.hasKey && distance(prisonMap.key.position, snapshot.player.position) < 0.8) {
     return "Press E to take security key";
   }
+  const nearPebble = snapshot.pebbles.some(
+    (pebble) => !pebble.collected && distance(pebble.position, snapshot.player.position) < 0.75,
+  );
+  if (nearPebble) {
+    return "Press E to pick up pebble";
+  }
   if (distance(prisonMap.exit.position, snapshot.player.position) < 0.9) {
     return snapshot.objectives.hasKey ? "Press E to unlock exit" : "Find the key before using the exit";
+  }
+  if (snapshot.player.pebbles > 0) {
+    return "Hold left mouse to charge throw, release to throw";
   }
   return "WASD move | Shift sprint | E interact";
 }
@@ -31,6 +59,9 @@ function interactionPrompt(snapshot: SimulationSnapshot): string {
 function bannerFor(snapshot: SimulationSnapshot): HudBanner {
   if (snapshot.completed?.outcome === "escape") {
     return { text: "Escaped", tone: "success" };
+  }
+  if (snapshot.completed?.outcome === "death") {
+    return { text: "Dead", tone: "danger" };
   }
   if (snapshot.completed?.outcome === "capture") {
     return { text: "Captured", tone: "danger" };
@@ -46,6 +77,55 @@ function bannerFor(snapshot: SimulationSnapshot): HudBanner {
     return { text: "Suspicious", tone: "warn" };
   }
   return { text: "Stay quiet", tone: "neutral" };
+}
+
+function formatAlertLevel(level: string): string {
+  return level
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function alertTone(level: string): HudBanner["tone"] {
+  if (level === "alert" || level === "armed_response" || level === "lockdown_pressure") {
+    return "danger";
+  }
+  if (level === "suspicious") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+export function createHudModel(snapshot: SimulationSnapshot): HudModel {
+  const health = snapshot.player.health ?? { entityId: "player", hp: 100, maxHp: 100, isDown: false };
+  const weaponState = snapshot.player.weapons;
+  const gunId = weaponState?.primaryGunId ?? weaponState?.sidearmId ?? null;
+  const gun = gunId ? weapons[gunId] : null;
+  const loadedAmmo = gun ? (weaponState?.ammoByWeapon[gun.id] ?? 0) : 0;
+  const reserveAmmo = gun ? (weaponState?.reserveAmmoByType[gun.ammoType] ?? 0) : 0;
+  const reloadLabel = weaponState?.reload
+    ? `Reloading ${Math.ceil(weaponState.reload.remainingMs / 1000)}s`
+    : "Ready";
+  const maxSuspicion = Math.max(0, ...snapshot.guards.map((guard) => guard.suspicion));
+  const alert = snapshot.alert ?? { level: "calm", pressure: 0, armedResponseTriggered: false };
+
+  return {
+    objective: snapshot.objectives.hasKey ? "Reach the locked exit" : "Find the security key",
+    keyLabel: snapshot.objectives.hasKey ? "secured" : "missing",
+    pebbleCount: snapshot.player.pebbles,
+    healthLabel: `${Math.ceil(health.hp)} / ${Math.ceil(health.maxHp)}`,
+    healthPercent: Math.round((health.hp / Math.max(1, health.maxHp)) * 100),
+    meleeLabel: weapons[weaponState?.meleeWeaponId ?? "fists"].label,
+    gunLabel: gun?.label ?? "No gun",
+    ammoLabel: gun ? `${loadedAmmo} / ${reserveAmmo}` : "-",
+    reloadLabel,
+    healingItemsLabel: String(weaponState?.healingItems ?? 0),
+    alertLabel: formatAlertLevel(alert.level),
+    alertTone: alertTone(alert.level),
+    suspicionPercent: Math.round(maxSuspicion * 100),
+    prompt: interactionPrompt(snapshot),
+    banner: bannerFor(snapshot),
+  };
 }
 
 function escapeHtml(value: string): string {
@@ -66,25 +146,55 @@ export class Hud {
   }
 
   update(snapshot: SimulationSnapshot): void {
-    const maxSuspicion = Math.max(0, ...snapshot.guards.map((guard) => guard.suspicion));
-    const banner = bannerFor(snapshot);
-    const objective = snapshot.objectives.hasKey ? "Reach the locked exit" : "Find the security key";
+    const model = createHudModel(snapshot);
 
     this.root.innerHTML = `
       <section class="hud__panel">
         <div class="hud__eyebrow">Objective</div>
-        <div class="hud__objective">${objective}</div>
+        <div class="hud__objective">${model.objective}</div>
         <div class="hud__row">
           <span>Key</span>
-          <strong>${snapshot.objectives.hasKey ? "secured" : "missing"}</strong>
+          <strong>${model.keyLabel}</strong>
         </div>
-        <div class="hud__prompt">${interactionPrompt(snapshot)}</div>
+        <div class="hud__row">
+          <span>Pebbles</span>
+          <strong>${model.pebbleCount}</strong>
+        </div>
+        <div class="hud__prompt">${model.prompt}</div>
       </section>
       <section class="hud__panel hud__panel--right">
-        <div class="hud__banner hud__banner--${banner.tone}">${banner.text}</div>
+        <div class="hud__banner hud__banner--${model.banner.tone}">${model.banner.text}</div>
+        <div class="hud__row hud__row--compact">
+          <span>Health</span>
+          <strong>${model.healthLabel}</strong>
+        </div>
+        <div class="hud__meter hud__meter--health">
+          <div class="hud__meter-fill hud__meter-fill--health" style="width: ${model.healthPercent}%"></div>
+        </div>
+        <div class="hud__row hud__row--compact">
+          <span>Melee</span>
+          <strong>${model.meleeLabel}</strong>
+        </div>
+        <div class="hud__row hud__row--compact">
+          <span>Gun</span>
+          <strong>${model.gunLabel}</strong>
+        </div>
+        <div class="hud__row hud__row--compact">
+          <span>Ammo</span>
+          <strong>${model.ammoLabel}</strong>
+        </div>
+        <div class="hud__row hud__row--compact">
+          <span>Reload</span>
+          <strong>${model.reloadLabel}</strong>
+        </div>
+        <div class="hud__row hud__row--compact">
+          <span>Heals</span>
+          <strong>${model.healingItemsLabel}</strong>
+        </div>
+        <div class="hud__banner hud__banner--${model.alertTone} hud__banner--small">${model.alertLabel}</div>
         <label class="hud__meter-label" for="suspicion-meter">Suspicion</label>
         <div id="suspicion-meter" class="hud__meter">
-          <div class="hud__meter-fill" style="width: ${Math.round(maxSuspicion * 100)}%"></div>
+          <div class="hud__meter-fill" style="width: ${model.suspicionPercent}%"></div>
         </div>
       </section>
     `;
@@ -135,9 +245,10 @@ export class Hud {
   }
 
   showReportLoading(outcome: RunOutcome): void {
+    const outcomeLabel = outcome === "escape" ? "Escaped" : outcome === "death" ? "Death" : "Captured";
     this.root.innerHTML = `
       <section class="menu-card report-card">
-        <p class="hud__eyebrow">Run ${outcome === "escape" ? "Escaped" : "Captured"}</p>
+        <p class="hud__eyebrow">Run ${outcomeLabel}</p>
         <h1>Generating Intelligence Report</h1>
         <p>Submitting run events to SQLite and waiting for Codex to select a validated security response.</p>
       </section>
@@ -154,7 +265,7 @@ export class Hud {
     this.root.innerHTML = `
       <section class="menu-card report-card">
         <p class="hud__eyebrow">Intelligence Report</p>
-        <h1>${response.outcome === "escape" ? "Escape Logged" : "Capture Logged"}</h1>
+        <h1>${response.outcome === "escape" ? "Escape Logged" : response.outcome === "death" ? "Death Logged" : "Capture Logged"}</h1>
         <p>${escapeHtml(response.report.rationale)}</p>
         <div class="report-card__section">
           <strong>Learned habit</strong>

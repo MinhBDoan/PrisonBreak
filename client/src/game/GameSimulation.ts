@@ -10,6 +10,7 @@ import { collidesWithSolidObjects, corridorAt, isWall, prisonMap } from "./map";
 import { NoiseSystem, type NoiseEvent } from "./NoiseSystem";
 import { ObjectiveSystem } from "./ObjectiveSystem";
 import { RunEventCollector } from "./RunEventCollector";
+import { createInitialWeaponState } from "./WeaponSystem";
 import type {
   AppliedAdaptations,
   AlertState,
@@ -24,6 +25,7 @@ import type {
   SimulationSnapshot,
   Vector,
   WeaponId,
+  WeaponState,
 } from "./types";
 import { weapons } from "./weapons";
 
@@ -160,6 +162,15 @@ function weaponSpatialNoiseRadius(weaponId: WeaponId, alertNoise: number, map: P
   return Math.min(mapLimit, radius);
 }
 
+function cloneWeaponState(state: WeaponState): WeaponState {
+  return {
+    ...state,
+    ammoByWeapon: { ...state.ammoByWeapon },
+    reserveAmmoByType: { ...state.reserveAmmoByType },
+    reload: state.reload ? { ...state.reload } : null,
+  };
+}
+
 export class GameSimulation {
   private readonly map: PrisonMap;
   private readonly events = new RunEventCollector();
@@ -177,6 +188,7 @@ export class GameSimulation {
     pebbles: 0,
   };
   private playerHealth = createHealthState("player", 100);
+  private playerWeapons = createInitialWeaponState();
   private guards: GuardRuntime[];
   private readonly guardHealth = new Map<string, HealthState>();
   private alertState = createAlertState();
@@ -361,6 +373,8 @@ export class GameSimulation {
         hasKey: this.player.hasKey,
         hiddenIn: this.player.hiddenIn,
         pebbles: this.player.pebbles,
+        health: { ...this.playerHealth },
+        weapons: cloneWeaponState(this.playerWeapons),
       },
       guards: this.guards.map((guard) => {
         const body = this.bodyState.bodies[guard.id];
@@ -371,6 +385,7 @@ export class GameSimulation {
           health: health ? { ...health } : undefined,
         };
       }),
+      alert: { ...this.alertState },
       objectives: this.objectives.snapshot(this.player),
       pebbles: this.map.pebbles.map((pebble) => ({
         ...pebble,
