@@ -26,10 +26,21 @@ const inspectionIntervalMs = 1800;
 const noiseSuspicion = {
   walk: 0.08,
   sprint: 0.18,
+  pebble: 0.22,
 };
 const noiseChaseDurationMs = 3000;
-const wallCollisionRadius = 0.45;
+const wallCollisionRadius = 0.35;
 const playerObjectCollisionRadius = 0.28;
+const pebblePickupRadius = 0.7;
+const pebbleThrowRange = 4;
+const pebbleNoiseRadius = 3.8;
+const pebbleFlightMs = 300;
+
+type PendingPebbleImpact = {
+  origin: Vector;
+  landing: Vector;
+  impactAtMs: number;
+};
 
 function normalize(vector: Vector): Vector {
   const length = Math.hypot(vector.x, vector.y);
@@ -37,6 +48,23 @@ function normalize(vector: Vector): Vector {
     return { x: 0, y: 0 };
   }
   return { x: vector.x / length, y: vector.y / length };
+}
+
+function wallBetween(map: PrisonMap, from: Vector, to: Vector): boolean {
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  const steps = Math.max(1, Math.ceil(distance / 0.1));
+  for (let step = 1; step <= steps; step += 1) {
+    const progress = step / steps;
+    if (
+      isWall(map, {
+        x: from.x + (to.x - from.x) * progress,
+        y: from.y + (to.y - from.y) * progress,
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function cloneGuard(guard: GuardRuntime): GuardRuntime {
@@ -77,6 +105,7 @@ function applyGuardOverrides(guards: GuardRuntime[], overrides: GuardOverride[])
       inspectionTarget: null,
       searchUntilMs: 0,
       chaseUntilMs: 0,
+      distractionUntilMs: 0,
       lastSeenPlayerPosition: null,
     });
   }
@@ -125,9 +154,12 @@ export class GameSimulation {
     position: { x: 1.5, y: 1.5 },
     hasKey: false,
     hiddenIn: null,
+    pebbles: 0,
   };
   private playerHealth = createHealthState("player", 100);
   private guards: GuardRuntime[];
+  private readonly collectedPebbles = new Set<string>();
+  private readonly pendingPebbleImpacts: PendingPebbleImpact[] = [];
   private timeMs = 0;
   private completed: { outcome: RunOutcome; durationMs: number } | null = null;
 
@@ -153,8 +185,12 @@ export class GameSimulation {
     this.timeMs += stepMs;
     this.movePlayer(input);
     if (input.interact) {
-      this.interact();
+      this.interact(input.direction);
     }
+    if (input.throwTarget) {
+      this.throwPebble(input.throwTarget);
+    }
+    this.resolvePebbleImpacts();
 
     this.updateLearnedInspections();
     for (const guard of this.guards) {
@@ -204,11 +240,17 @@ export class GameSimulation {
         position: { ...this.player.position },
         hasKey: this.player.hasKey,
         hiddenIn: this.player.hiddenIn,
+        pebbles: this.player.pebbles,
       },
       guards: this.guards.map((guard) => ({
         ...cloneGuard(guard),
       })),
       objectives: this.objectives.snapshot(this.player),
+      pebbles: this.map.pebbles.map((pebble) => ({
+        ...pebble,
+        position: { ...pebble.position },
+        collected: this.collectedPebbles.has(pebble.id),
+      })),
       completed: this.completed ? { ...this.completed } : null,
       adaptations: {
         active: [...this.adaptations.active],
@@ -235,11 +277,8 @@ export class GameSimulation {
     }
 
     const speed = input.sprint ? sprintSpeed : walkSpeed;
-    const next = {
-      x: this.player.position.x + direction.x * speed,
-      y: this.player.position.y + direction.y * speed,
-    };
-    if (this.collidesWithObstacle(next)) {
+    const next = this.nextPlayerPosition(direction, speed);
+    if (!next) {
       return;
     }
 
@@ -262,6 +301,30 @@ export class GameSimulation {
     }
   }
 
+  private nextPlayerPosition(direction: Vector, speed: number): Vector | null {
+    const candidates = [
+      {
+        x: this.player.position.x + direction.x * speed,
+        y: this.player.position.y + direction.y * speed,
+      },
+    ];
+
+    if (direction.x !== 0 && direction.y !== 0) {
+      const horizontal = {
+        x: this.player.position.x + direction.x * speed,
+        y: this.player.position.y,
+      };
+      const vertical = {
+        x: this.player.position.x,
+        y: this.player.position.y + direction.y * speed,
+      };
+      candidates.push(Math.abs(direction.x) >= Math.abs(direction.y) ? horizontal : vertical);
+      candidates.push(Math.abs(direction.x) >= Math.abs(direction.y) ? vertical : horizontal);
+    }
+
+    return candidates.find((candidate) => !this.collidesWithObstacle(candidate)) ?? null;
+  }
+
   private propagateNoise(noise: NoiseEvent): void {
     for (const guard of this.guards) {
       if (guard.state === "search" || guard.state === "chase") {
@@ -276,6 +339,7 @@ export class GameSimulation {
       guard.state = "chase";
       guard.lastSeenPlayerPosition = { ...noise.position };
       guard.chaseUntilMs = this.timeMs + noiseChaseDurationMs;
+      guard.distractionUntilMs = noise.source === "pebble" ? guard.chaseUntilMs : 0;
       guard.facing = normalize({
         x: noise.position.x - guard.position.x,
         y: noise.position.y - guard.position.y,
@@ -298,8 +362,24 @@ export class GameSimulation {
     return collidesWithSolidObjects(this.map, position, playerObjectCollisionRadius);
   }
 
-  private interact(): void {
-    const hidingResult = this.hiding.toggle(this.player);
+  private interact(direction: Vector): void {
+    const pebble = this.map.pebbles.find(
+      (candidate) =>
+        !this.collectedPebbles.has(candidate.id) &&
+        Math.hypot(candidate.position.x - this.player.position.x, candidate.position.y - this.player.position.y) <=
+          pebblePickupRadius,
+    );
+    if (pebble) {
+      this.collectedPebbles.add(pebble.id);
+      this.player.pebbles += 1;
+      return;
+    }
+
+    const hidingResult = this.hiding.toggle(
+      this.player,
+      (position) => !this.collidesWithObstacle(position),
+      normalize(direction),
+    );
     if (hidingResult.entered) {
       this.events.record(this.timeMs, {
         type: "hide_enter",
@@ -327,6 +407,64 @@ export class GameSimulation {
     }
     if (result.completed) {
       this.complete(result.completed);
+    }
+  }
+
+  private throwPebble(target: Vector): void {
+    if (this.player.pebbles <= 0 || this.player.hiddenIn) {
+      return;
+    }
+
+    const direction = normalize({
+      x: target.x - this.player.position.x,
+      y: target.y - this.player.position.y,
+    });
+    if (direction.x === 0 && direction.y === 0) {
+      return;
+    }
+
+    const distance = Math.hypot(target.x - this.player.position.x, target.y - this.player.position.y);
+    const landingDistance = Math.min(distance, pebbleThrowRange);
+    const landing = {
+      x: this.player.position.x + direction.x * landingDistance,
+      y: this.player.position.y + direction.y * landingDistance,
+    };
+    if (wallBetween(this.map, this.player.position, landing)) {
+      return;
+    }
+
+    this.player.pebbles -= 1;
+    this.events.record(this.timeMs, {
+      type: "pebble_throw",
+      position: { ...this.player.position },
+      payload: { landing: { ...landing } },
+    });
+    this.pendingPebbleImpacts.push({
+      origin: { ...this.player.position },
+      landing,
+      impactAtMs: this.timeMs + pebbleFlightMs,
+    });
+  }
+
+  private resolvePebbleImpacts(): void {
+    for (let index = this.pendingPebbleImpacts.length - 1; index >= 0; index -= 1) {
+      const impact = this.pendingPebbleImpacts[index];
+      if (this.timeMs < impact.impactAtMs) {
+        continue;
+      }
+
+      this.pendingPebbleImpacts.splice(index, 1);
+      const noise: NoiseEvent = {
+        position: impact.landing,
+        radius: pebbleNoiseRadius,
+        source: "pebble",
+      };
+      this.events.record(this.timeMs, {
+        type: "noise",
+        position: { ...impact.landing },
+        payload: { radius: noise.radius, source: noise.source, origin: { ...impact.origin } },
+      });
+      this.propagateNoise(noise);
     }
   }
 
