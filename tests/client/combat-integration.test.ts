@@ -8,6 +8,7 @@ import {
 } from "../../client/src/game/HealthSystem";
 import { prisonMap } from "../../client/src/game/map";
 import type { SimulationInput } from "../../client/src/game/types";
+import { weapons } from "../../client/src/game/weapons";
 
 const noInput: SimulationInput = {
   direction: { x: 0, y: 0 },
@@ -91,18 +92,38 @@ describe("simulation health outcome", () => {
       meleeWeaponId: "makeshift_knife",
       primaryGunId: null,
       sidearmId: null,
-      healingItems: 1,
+      healingItems: 0,
     });
 
     snapshot.player.health.hp = 1;
     snapshot.alert.pressure = 99;
-    snapshot.player.weapons.healingItems = 0;
+    snapshot.player.weapons.healingItems = 99;
     snapshot.player.weapons.reserveAmmoByType.nine_mm = 99;
 
     expect(simulation.getSnapshot().player.health.hp).toBe(100);
     expect(simulation.getSnapshot().alert.pressure).toBe(0);
-    expect(simulation.getSnapshot().player.weapons.healingItems).toBe(1);
+    expect(simulation.getSnapshot().player.weapons.healingItems).toBe(0);
     expect(simulation.getSnapshot().player.weapons.reserveAmmoByType.nine_mm).toBe(0);
+  });
+
+  it("picks up bandages as healing items and records the pickup", () => {
+    const simulation = new GameSimulation();
+
+    expect(simulation.getSnapshot().player.weapons.healingItems).toBe(0);
+    expect(simulation.getSnapshot().healingPickups[0]).toMatchObject({
+      id: "bandages_alpha",
+      collected: false,
+    });
+
+    simulation.setPlayerPosition(prisonMap.healingPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    expect(simulation.getSnapshot().player.weapons.healingItems).toBe(1);
+    expect(simulation.getSnapshot().healingPickups[0].collected).toBe(true);
+    expect(simulation.getEvents()).toContainEqual(expect.objectContaining({
+      type: "heal_pickup",
+      payload: expect.objectContaining({ pickupId: "bandages_alpha", amount: 1 }),
+    }));
   });
 
   it("records death when player damage reaches zero health", () => {
@@ -129,22 +150,20 @@ describe("simulation health outcome", () => {
     expect(simulation.getEvents().some((event) => event.type === "death")).toBe(true);
   });
 
-  it("repeated active guard contact reduces player HP to zero and records death", () => {
+  it("repeated active guard melee attacks reduce player HP at a survivable cadence and record death", () => {
     const simulation = new GameSimulation({
       guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
     });
     simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
 
-    stepMany(simulation, 600);
+    stepMany(simulation, 143);
+    expect(simulation.getPlayerHealth().hp).toBe(90);
 
-    expect(simulation.getPlayerHealth()).toEqual({
-      entityId: "player",
-      hp: 0,
-      maxHp: 100,
-      isDown: true,
-    });
-    expect(simulation.getSnapshot().completed?.outcome).toBe("death");
-    expect(simulation.getEvents().some((event) => event.type === "death")).toBe(true);
+    stepMany(simulation, 100);
+
+    expect(simulation.getPlayerHealth().hp).toBeGreaterThan(40);
+    expect(simulation.getSnapshot().completed).toBeNull();
+    expect(simulation.getEvents().filter((event) => event.type === "guard_attack").length).toBeLessThanOrEqual(6);
     expect(simulation.getEvents().some((event) => event.type === "capture")).toBe(false);
   });
 
@@ -194,12 +213,106 @@ describe("simulation combat integration", () => {
     });
     expect(simulation.getAlertState().level).not.toBe("calm");
     expect(simulation.getSnapshot().completed).toBeNull();
-    expect(simulation.getEvents().some((event) => event.type === "attack")).toBe(true);
+    expect(simulation.getEvents()).toContainEqual(expect.objectContaining({
+      type: "attack",
+      payload: expect.objectContaining({
+        weaponId: "pistol",
+        targetPosition: { x: 5.5, y: 2.5 },
+      }),
+    }));
     const weaponNoise = simulation
       .getEvents()
       .find((event) => event.type === "noise" && event.payload.source === "weapon" && event.payload.weaponId === "pistol");
     expect(weaponNoise?.payload.radius).not.toBe(result?.noise);
     expect(weaponNoise?.payload.radius as number).toBeLessThan(prisonMap.width);
+  });
+
+  it("step gun attacks aim toward the requested target instead of firing on selection", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [
+        { id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-b", position: { x: 5.5, y: 4.5 }, facing: { x: 1, y: 0 } },
+      ],
+    });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+
+    simulation.step({
+      direction: { x: 0, y: 0 },
+      sprint: false,
+      interact: false,
+      attack: { mode: "gun", target: { x: 7, y: 2.5 } },
+    });
+
+    expect(simulation.getGuardHealth("guard-a")?.hp).toBe(10);
+    expect(simulation.getGuardHealth("guard-b")?.hp).toBe(45);
+    expect(simulation.getSnapshot().player.weapons.ammoByWeapon.pistol).toBe(5);
+  });
+
+  it("reload emits quieter weapon noise than a pistol shot and near melee impact noise", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 6.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+    simulation.playerAttack("guard-a", "pistol");
+
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: false, reload: true });
+
+    const reloadNoise = simulation
+      .getEvents()
+      .find((event) => event.type === "noise" && event.payload.source === "reload");
+    expect(reloadNoise?.payload.weaponId).toBe("pistol");
+    expect(reloadNoise?.payload.intensity).toBeGreaterThanOrEqual(weapons.baton.noise - 5);
+    expect(reloadNoise?.payload.intensity).toBeLessThan(weapons.pistol.noise);
+  });
+
+  it("allows the pistol to fire again after reload completes", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [
+        { id: "guard-a", position: { x: 6.5, y: 2.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-b", position: { x: 6.5, y: 4.5 }, facing: { x: 1, y: 0 } },
+      ],
+    });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+    simulation.playerAttack("guard-a", "pistol");
+
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: false, reload: true });
+    stepMany(simulation, Math.ceil(weapons.pistol.reloadMs / 100));
+
+    expect(simulation.getSnapshot().player.weapons.reload).toBeNull();
+    expect(simulation.getSnapshot().player.weapons.ammoByWeapon.pistol).toBe(weapons.pistol.magazineSize);
+
+    simulation.step({
+      direction: { x: 0, y: 0 },
+      sprint: false,
+      interact: false,
+      attack: { mode: "gun", target: { x: 6.5, y: 4.5 } },
+    });
+
+    expect(simulation.getGuardHealth("guard-b")?.hp).toBe(10);
+    expect(simulation.getSnapshot().player.weapons.ammoByWeapon.pistol).toBe(weapons.pistol.magazineSize - 1);
+  });
+
+  it("using bandages records a heal event for visual feedback", () => {
+    const simulation = new GameSimulation();
+    simulation.applyPlayerDamage(35);
+    simulation.setPlayerPosition(prisonMap.healingPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: false, heal: true });
+
+    expect(simulation.getPlayerHealth().hp).toBe(100);
+    expect(simulation.getSnapshot().player.weapons.healingItems).toBe(0);
+    expect(simulation.getEvents()).toContainEqual(expect.objectContaining({
+      type: "heal",
+      position: prisonMap.healingPickups[0].position,
+      payload: expect.objectContaining({ amount: 35, hp: 100 }),
+    }));
   });
 
   it("fist attacks can knock out a guard body and skip that guard's capture updates until discovery", () => {
@@ -284,10 +397,78 @@ describe("simulation combat integration", () => {
     stepMany(simulation, 1);
 
     expect(simulation.getEvents().some((event) => event.type === "body_discovered")).toBe(true);
-    stepMany(simulation, 900);
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-b")?.suspicion).toBeGreaterThan(0.4);
+    stepMany(simulation, 19);
+
+    expect(simulation.getEvents().some((event) => event.type === "guard_wakeup")).toBe(false);
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.bodyState).toBe("knocked_out");
+
+    stepMany(simulation, 1);
 
     expect(simulation.getEvents().some((event) => event.type === "guard_wakeup")).toBe(true);
     expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.bodyState).toBe("active");
+  });
+
+  it("lets the player drag a body and dump it in a hiding spot so patrols cannot discover it", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [
+        { id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-b", position: { x: 8.5, y: 4.5 }, facing: { x: 1, y: 0 } },
+      ],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+
+    let result = simulation.playerAttack("guard-a", "fists");
+    while (result?.bodyState === "active") {
+      result = simulation.playerAttack("guard-a", "fists");
+    }
+
+    simulation.setPlayerPosition({ x: 3.2, y: 2.5 });
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    expect(simulation.getSnapshot().player.draggingBodyId).toBe("guard-a");
+    expect(simulation.getEvents()).toContainEqual(expect.objectContaining({ type: "body_drag_started" }));
+
+    stepMany(simulation, 10, { direction: { x: 1, y: 0 }, sprint: false, interact: false });
+    expect(simulation.getBodyState().bodies["guard-a"].position.x).toBeCloseTo(simulation.getSnapshot().player.position.x, 1);
+
+    simulation.setPlayerPosition(prisonMap.hidingSpots[2].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    expect(simulation.getSnapshot().player.draggingBodyId).toBeNull();
+    expect(simulation.getBodyState().bodies["guard-a"]).toMatchObject({
+      bodyState: "knocked_out",
+      hiddenIn: "shadow_nook",
+    });
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")).toMatchObject({
+      bodyState: "knocked_out",
+      bodyHiddenIn: "shadow_nook",
+    });
+    expect(simulation.getEvents()).toContainEqual(expect.objectContaining({ type: "body_dumped" }));
+
+    stepMany(simulation, 40);
+    expect(simulation.getEvents().some((event) => event.type === "body_discovered")).toBe(false);
+  });
+
+  it("prevents the player from hiding in a spot that already contains a dumped body", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+    let result = simulation.playerAttack("guard-a", "fists");
+    while (result?.bodyState === "active") {
+      result = simulation.playerAttack("guard-a", "fists");
+    }
+    simulation.setPlayerPosition({ x: 3.2, y: 2.5 });
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    simulation.setPlayerPosition(prisonMap.hidingSpots[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    expect(simulation.getBodyState().bodies["guard-a"].hiddenIn).toBe("locker_alpha");
+
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    expect(simulation.getSnapshot().player.hiddenIn).toBeNull();
+    expect(simulation.getEvents().some((event) => event.type === "hide_enter")).toBe(false);
   });
 
   it("applies combat adaptations to starting combat pressure, durability, ammo, and body checks", () => {
@@ -335,6 +516,75 @@ describe("simulation combat integration", () => {
         .getEvents()
         .some((event) => event.type === "noise" && event.payload.source === "weapon" && event.payload.weaponId === "pistol"),
     ).toBe(true);
+  });
+
+  it("records gun attack feedback until the shot hits a wall when no guard is hit", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 6.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    simulation.setPlayerPosition({ x: 10.5, y: 2.5 });
+
+    simulation.step({
+      direction: { x: 0, y: 0 },
+      sprint: false,
+      interact: false,
+      attack: { mode: "gun", target: { x: 14.5, y: 2.5 } },
+    });
+
+    expect(simulation.getGuardHealth("guard-a")?.hp).toBe(45);
+    expect(simulation.getSnapshot().player.weapons.ammoByWeapon.pistol).toBe(5);
+    const attack = simulation.getEvents().find((event) => event.type === "attack");
+    expect(attack).toEqual(expect.objectContaining({
+      position: { x: 10.5, y: 2.5 },
+      payload: expect.objectContaining({
+        targetId: null,
+        weaponId: "pistol",
+      }),
+    }));
+    expect((attack?.payload.targetPosition as { x: number; y: number }).x).toBeGreaterThan(10.8);
+    expect((attack?.payload.targetPosition as { x: number; y: number }).x).toBeLessThan(11);
+    expect((attack?.payload.targetPosition as { x: number; y: number }).y).toBe(2.5);
+  });
+
+  it("stops missed gun feedback at a closed door", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    simulation.setPlayerPosition({ x: 17.5, y: 4.5 });
+
+    simulation.step({
+      direction: { x: 0, y: 0 },
+      sprint: false,
+      interact: false,
+      attack: { mode: "gun", target: { x: 17.5, y: 1.5 } },
+    });
+
+    const attack = simulation.getEvents().find((event) => event.type === "attack");
+    expect((attack?.payload.targetPosition as { x: number; y: number }).y).toBeGreaterThan(3.95);
+    expect((attack?.payload.targetPosition as { x: number; y: number }).y).toBeLessThanOrEqual(4.1);
+  });
+
+  it("extends missed gun feedback to weapon range when no blocker is hit first", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 6.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+
+    simulation.step({
+      direction: { x: 0, y: 0 },
+      sprint: false,
+      interact: false,
+      attack: { mode: "gun", target: { x: 3.5, y: 4.5 } },
+    });
+
+    const attack = simulation.getEvents().find((event) => event.type === "attack");
+    expect(attack?.payload.targetPosition).toEqual({ x: 3.5, y: 10.5 });
   });
 
   it("emits armed response telemetry once when combat noise crosses that threshold", () => {

@@ -87,6 +87,8 @@ const rendererCalls = {
   showPebbleAim: vi.fn(),
   hidePebbleAim: vi.fn(),
   spawnPebbleThrow: vi.fn(),
+  spawnCombatFeedback: vi.fn(),
+  spawnHealFeedback: vi.fn(),
 };
 
 function mockSceneCollaborators(): void {
@@ -95,6 +97,8 @@ function mockSceneCollaborators(): void {
   rendererCalls.showPebbleAim.mockReset();
   rendererCalls.hidePebbleAim.mockReset();
   rendererCalls.spawnPebbleThrow.mockReset();
+  rendererCalls.spawnCombatFeedback.mockReset();
+  rendererCalls.spawnHealFeedback.mockReset();
   vi.doMock("../../client/src/render/GameRenderer", () => ({
     clampThrowTarget: (
       origin: { x: number; y: number },
@@ -125,6 +129,12 @@ function mockSceneCollaborators(): void {
       }
       spawnPebbleThrow(...args: unknown[]) {
         rendererCalls.spawnPebbleThrow(...args);
+      }
+      spawnCombatFeedback(...args: unknown[]) {
+        rendererCalls.spawnCombatFeedback(...args);
+      }
+      spawnHealFeedback(...args: unknown[]) {
+        rendererCalls.spawnHealFeedback(...args);
       }
     },
     renderScale: 64,
@@ -312,12 +322,21 @@ describe("GameScene", () => {
     }));
   });
 
-  it("maps combat hotkeys into simulation input", async () => {
+  it("uses combat hotkeys for selection and fires selected gun toward pointer on click", async () => {
     const { scene } = await createSceneHarness();
 
     startRun(scene, 1);
-    const simulation = (scene as unknown as { simulation: { step: (input: unknown) => void } }).simulation;
+    const runtime = scene as unknown as {
+      input: { emit: (type: string, pointer: unknown) => void; activePointer: unknown };
+      simulation: { step: (input: unknown) => void };
+    };
+    const simulation = runtime.simulation;
     const stepSpy = vi.spyOn(simulation, "step");
+    const pointer = {
+      worldX: 64 * 6,
+      worldY: 64 * 2,
+      leftButtonDown: () => true,
+    };
 
     windowListeners.keydown?.forEach((listener) => listener({ code: "Digit2", key: "2" }));
     windowListeners.keydown?.forEach((listener) => listener({ code: "KeyR", key: "r" }));
@@ -325,16 +344,73 @@ describe("GameScene", () => {
     scene.update();
 
     expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
-      attack: "gun",
+      attack: null,
       reload: true,
       heal: true,
     }));
 
+    runtime.input.activePointer = pointer;
+    runtime.input.emit("pointerdown", pointer);
+    runtime.input.emit("pointerup", pointer);
+    scene.update();
+
+    expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      attack: { mode: "gun", target: { x: 6, y: 2 } },
+      reload: false,
+      heal: false,
+    }));
+  });
+
+  it("selects misc with 3 and only charges pebble throws from the misc slot", async () => {
+    const { scene } = await createSceneHarness();
+
+    startRun(scene, 1);
+    const runtime = scene as unknown as {
+      input: { emit: (type: string, pointer: unknown) => void; activePointer: unknown };
+      simulation: {
+        setPlayerPosition: (position: { x: number; y: number }) => void;
+        getSnapshot: () => { player: { pebbles: number } };
+        step: (input: unknown) => void;
+      };
+      time: { now: number };
+    };
+    runtime.simulation.setPlayerPosition({ x: 2, y: 2 });
+    (runtime.simulation as unknown as { player: { pebbles: number } }).player.pebbles = 1;
+    const stepSpy = vi.spyOn(runtime.simulation, "step");
+    const pointer = {
+      worldX: 64 * 5,
+      worldY: 64 * 2,
+      leftButtonDown: () => true,
+    };
+
+    windowListeners.keydown?.forEach((listener) => listener({ code: "Digit2", key: "2" }));
+    runtime.input.activePointer = pointer;
+    runtime.input.emit("pointerdown", pointer);
+    runtime.time.now = 1000;
+    scene.update();
+
+    expect(rendererCalls.showPebbleAim).not.toHaveBeenCalled();
+
+    runtime.input.emit("pointerup", pointer);
+    scene.update();
+    expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      attack: { mode: "gun", target: { x: 5, y: 2 } },
+      throwTarget: null,
+    }));
+
+    windowListeners.keydown?.forEach((listener) => listener({ code: "Digit3", key: "3" }));
+    scene.update();
+    runtime.input.emit("pointerdown", pointer);
+    runtime.time.now = 2000;
+    scene.update();
+
+    expect(rendererCalls.showPebbleAim).toHaveBeenCalled();
+
+    runtime.input.emit("pointerup", pointer);
     scene.update();
     expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
       attack: null,
-      reload: false,
-      heal: false,
+      throwTarget: { x: 5, y: 2 },
     }));
   });
 
@@ -360,6 +436,7 @@ describe("GameScene", () => {
       leftButtonDown: () => true,
     };
 
+    windowListeners.keydown?.forEach((listener) => listener({ code: "Digit3", key: "3" }));
     (scene as unknown as { input: { emit: (type: string, pointer: unknown) => void; activePointer: unknown } }).input.activePointer = pointer;
     (scene as unknown as { input: { emit: (type: string, pointer: unknown) => void } }).input.emit("pointerdown", pointer);
     (scene as unknown as { time: { now: number } }).time.now = 1000;
@@ -396,6 +473,7 @@ describe("GameScene", () => {
       leftButtonDown: () => true,
     };
 
+    windowListeners.keydown?.forEach((listener) => listener({ code: "Digit3", key: "3" }));
     runtime.input.emit("pointerdown", pointer);
     runtime.time.now = 1000;
     runtime.input.emit("pointerup", pointer);
@@ -407,5 +485,106 @@ describe("GameScene", () => {
       expect.objectContaining({ x: 3, y: 2 }),
       expect.any(Function),
     );
+  });
+
+  it("plays combat feedback for new attack events", async () => {
+    const { scene } = await createSceneHarness();
+
+    startRun(scene, 1);
+    Object.assign(scene as unknown as { simulation: unknown }, {
+      simulation: {
+        step() {},
+        getSnapshot() {
+          return {
+            completed: null,
+            player: { position: { x: 2, y: 2 }, pebbles: 0 },
+          };
+        },
+        getEvents() {
+          return [
+            {
+              type: "attack",
+              atMs: 100,
+              position: { x: 2, y: 2 },
+              payload: {
+                weaponId: "pistol",
+                targetPosition: { x: 5, y: 2 },
+              },
+            },
+            {
+              type: "attack",
+              atMs: 200,
+              position: { x: 2, y: 2 },
+              payload: {
+                weaponId: "makeshift_knife",
+                targetPosition: { x: 2.7, y: 2 },
+              },
+            },
+            {
+              type: "guard_attack",
+              atMs: 300,
+              position: { x: 4, y: 2 },
+              payload: {
+                guardId: "guard-a",
+                targetPosition: { x: 3.4, y: 2 },
+                damage: 15,
+              },
+            },
+          ];
+        },
+      },
+    });
+
+    scene.update();
+
+    expect(rendererCalls.spawnCombatFeedback).toHaveBeenCalledWith(
+      scene,
+      { x: 2, y: 2 },
+      { x: 5, y: 2 },
+      "gun",
+    );
+    expect(rendererCalls.spawnCombatFeedback).toHaveBeenCalledWith(
+      scene,
+      { x: 2, y: 2 },
+      { x: 2.7, y: 2 },
+      "melee",
+    );
+    expect(rendererCalls.spawnCombatFeedback).toHaveBeenCalledWith(
+      scene,
+      { x: 4, y: 2 },
+      { x: 3.4, y: 2 },
+      "guard_melee",
+    );
+  });
+
+  it("plays green heal feedback for new heal events", async () => {
+    const { scene } = await createSceneHarness();
+
+    startRun(scene, 1);
+    Object.assign(scene as unknown as { simulation: unknown }, {
+      simulation: {
+        step() {},
+        getSnapshot() {
+          return {
+            completed: null,
+            player: { position: { x: 4, y: 4 }, pebbles: 0 },
+          };
+        },
+        getEvents() {
+          return [
+            {
+              type: "heal",
+              atMs: 100,
+              position: { x: 4, y: 4 },
+              payload: { amount: 35, hp: 100 },
+            },
+          ];
+        },
+      },
+    });
+
+    scene.update();
+
+    expect(rendererCalls.spawnHealFeedback).toHaveBeenCalledWith(scene, { x: 4, y: 4 });
   });
 });

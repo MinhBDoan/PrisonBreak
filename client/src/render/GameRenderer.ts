@@ -1,6 +1,6 @@
 import type Phaser from "phaser";
 import { prisonMap } from "../game/map";
-import type { GuardStateSnapshot, HidingSpot, SimulationSnapshot, Vector, WeaponPickup } from "../game/types";
+import type { Door, DoorKeyPickup, GuardStateSnapshot, HealingPickup, HidingSpot, SimulationSnapshot, Vector, WeaponPickup } from "../game/types";
 
 export const renderScale = 64;
 const noiseRippleCooldownMs = 500;
@@ -18,15 +18,22 @@ export type VisionConeDescriptor = {
 
 export type EntityDescriptor = {
   id: string;
-  kind: "player" | "guard" | "hidingSpot" | "key" | "exit" | "pebble" | "weaponPickup";
+  kind: "player" | "guard" | "hidingSpot" | "key" | "exit" | "pebble" | "weaponPickup" | "healingPickup" | "door" | "doorKey";
   x: number;
   y: number;
+};
+
+export type KeyVisualDescriptor = {
+  color: number;
+  strokeColor: number;
 };
 
 export type GuardDescriptor = EntityDescriptor & {
   kind: "guard";
   state: GuardStateSnapshot["state"];
   bodyState: NonNullable<GuardStateSnapshot["bodyState"]>;
+  dragging: boolean;
+  hiddenBody: boolean;
   health: GuardStateSnapshot["health"];
   suspicion: number;
   visionCone: VisionConeDescriptor | null;
@@ -35,12 +42,27 @@ export type GuardDescriptor = EntityDescriptor & {
 export type RenderDescriptors = {
   player: EntityDescriptor & { hidden: boolean };
   guards: GuardDescriptor[];
-  hidingSpots: Array<EntityDescriptor & { type: HidingSpot["type"] }>;
+  hidingSpots: Array<EntityDescriptor & { type: HidingSpot["type"]; bodyOccupied: boolean }>;
   coverObjects: Array<EntityDescriptor & { width: number; height: number }>;
   pebbles: Array<EntityDescriptor & { collected: boolean }>;
   weaponPickups: Array<EntityDescriptor & { collected: boolean; weaponId: WeaponPickup["weaponId"] }>;
+  healingPickups: Array<EntityDescriptor & { collected: boolean; amount: HealingPickup["amount"] }>;
+  doors: Array<
+    EntityDescriptor & {
+      width: number;
+      height: number;
+      open: boolean;
+      unlocked: boolean;
+      hingeX: number;
+      hingeY: number;
+      originX: number;
+      originY: number;
+      visualRotation: number;
+    }
+  >;
+  doorKeyPickups: Array<EntityDescriptor & { collected: boolean; keyId: DoorKeyPickup["keyId"] } & KeyVisualDescriptor>;
   objectives: {
-    key: EntityDescriptor & { collected: boolean };
+    key: EntityDescriptor & { collected: boolean } & KeyVisualDescriptor;
     exit: EntityDescriptor & { unlocked: boolean };
   };
   noiseRipples: Array<{ id: string; x: number; y: number; radius: number }>;
@@ -57,9 +79,14 @@ type RenderObjects = {
   coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
   pebbles: Map<string, Phaser.GameObjects.Arc>;
   weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
+  healingPickups: Map<string, Phaser.GameObjects.Rectangle>;
+  doors: Map<string, Phaser.GameObjects.Rectangle>;
+  doorKeyPickups: Map<string, Phaser.GameObjects.Star>;
   aimLine?: Phaser.GameObjects.Graphics;
   aimMarker?: Phaser.GameObjects.Arc;
   throwPebble?: Phaser.GameObjects.Arc;
+  bodyDragLine?: Phaser.GameObjects.Graphics;
+  combatEffects: Phaser.GameObjects.Graphics[];
   key?: Phaser.GameObjects.Star;
   exit?: Phaser.GameObjects.Rectangle;
   noiseRipple?: Phaser.GameObjects.Arc;
@@ -158,6 +185,8 @@ export class GameRenderer {
         y: world(guard.position.y),
         state: guard.state,
         bodyState: guard.bodyState ?? "active",
+        dragging: snapshot.player.draggingBodyId === guard.id,
+        hiddenBody: Boolean(guard.bodyHiddenIn),
         health: guard.health ? { ...guard.health } : undefined,
         suspicion: guard.suspicion,
         visionCone: guardCone(guard),
@@ -168,6 +197,7 @@ export class GameRenderer {
         type: spot.type,
         x: world(spot.position.x),
         y: world(spot.position.y),
+        bodyOccupied: snapshot.guards.some((guard) => guard.bodyHiddenIn === spot.id),
       })),
       coverObjects: prisonMap.coverObjects.map((cover) => ({
         id: cover.id,
@@ -192,12 +222,47 @@ export class GameRenderer {
         weaponId: pickup.weaponId,
         collected: pickup.collected,
       })),
+      healingPickups: snapshot.healingPickups.map((pickup) => ({
+        id: pickup.id,
+        kind: "healingPickup",
+        x: world(pickup.position.x),
+        y: world(pickup.position.y),
+        amount: pickup.amount,
+        collected: pickup.collected,
+      })),
+      doors: snapshot.doors.map((door) => ({
+        id: door.id,
+        kind: "door",
+        x: world(door.position.x),
+        y: world(door.position.y),
+        width: world(door.width),
+        height: world(door.height),
+        open: door.open,
+        unlocked: door.unlocked,
+        hingeX: world(door.position.x - door.width / 2),
+        hingeY: world(door.position.y),
+        originX: 0,
+        originY: 0.5,
+        visualRotation: door.open ? Math.PI / 2 : 0,
+      })),
+      doorKeyPickups: snapshot.doorKeyPickups.map((pickup) => ({
+        id: pickup.id,
+        kind: "doorKey",
+        x: world(pickup.position.x),
+        y: world(pickup.position.y),
+        keyId: pickup.keyId,
+        color: 0xffd166,
+        strokeColor: 0xfff0b8,
+        collected: pickup.collected,
+      })),
       objectives: {
         key: {
           id: prisonMap.key.id,
           kind: "key",
           x: world(prisonMap.key.position.x),
           y: world(prisonMap.key.position.y),
+          color: 0x57d7ff,
+          strokeColor: 0xd7f7ff,
           collected: snapshot.objectives.hasKey,
         },
         exit: {
@@ -259,9 +324,14 @@ export class GameRenderer {
       coverObjects: new Map(),
       pebbles: new Map(),
       weaponPickups: new Map(),
+      healingPickups: new Map(),
+      doors: new Map(),
+      doorKeyPickups: new Map(),
       aimLine: undefined,
       aimMarker: undefined,
       throwPebble: undefined,
+      bodyDragLine: undefined,
+      combatEffects: [],
       noiseRipple: undefined,
     };
   }
@@ -281,12 +351,17 @@ export class GameRenderer {
     objects.player.setAlpha(descriptors.player.hidden ? 0.42 : 1);
 
     for (const spot of descriptors.hidingSpots) {
-      const color = spot.type === "locker" ? 0x566b7f : 0x151a22;
+      const color = spot.bodyOccupied ? 0x5b3240 : spot.type === "locker" ? 0x566b7f : 0x151a22;
       const existing =
         objects.hidingSpots.get(spot.id) ??
         scene.add.rectangle(spot.x, spot.y, 34, 46, color, spot.type === "locker" ? 0.9 : 0.72);
       existing.setPosition(spot.x, spot.y);
-      existing.setStrokeStyle(2, spot.type === "locker" ? 0x90a9bf : 0x58616d, 0.45);
+      existing.setFillStyle(color, spot.bodyOccupied ? 0.94 : spot.type === "locker" ? 0.9 : 0.72);
+      existing.setStrokeStyle(
+        2,
+        spot.bodyOccupied ? 0xff7a8a : spot.type === "locker" ? 0x90a9bf : 0x58616d,
+        spot.bodyOccupied ? 0.8 : 0.45,
+      );
       objects.hidingSpots.set(spot.id, existing);
     }
 
@@ -322,6 +397,40 @@ export class GameRenderer {
       objects.weaponPickups.set(pickup.id, existing);
     }
 
+    for (const pickup of descriptors.healingPickups) {
+      const existing =
+        objects.healingPickups.get(pickup.id) ??
+        scene.add.rectangle(pickup.x, pickup.y, 24, 16, 0xcfffd5, 0.96);
+      existing.setPosition(pickup.x, pickup.y);
+      existing.setVisible(!pickup.collected);
+      existing.setStrokeStyle(2, 0x72d18b, 0.85);
+      objects.healingPickups.set(pickup.id, existing);
+    }
+
+    for (const door of descriptors.doors) {
+      const existing =
+        objects.doors.get(door.id) ??
+        scene.add.rectangle(door.hingeX, door.hingeY, door.width, door.height, 0x8f5f34, 0.98);
+      existing.setOrigin(door.originX, door.originY);
+      existing.setPosition(door.hingeX, door.hingeY);
+      existing.setSize(door.width, door.height);
+      existing.setRotation(door.visualRotation);
+      existing.setFillStyle(door.open ? 0x51745a : door.unlocked ? 0x8f5f34 : 0x5a3a28, door.open ? 0.72 : 0.98);
+      existing.setStrokeStyle(3, door.unlocked ? 0xffd166 : 0xc45a4a, 0.86);
+      objects.doors.set(door.id, existing);
+    }
+
+    for (const pickup of descriptors.doorKeyPickups) {
+      const existing =
+        objects.doorKeyPickups.get(pickup.id) ??
+        scene.add.star(pickup.x, pickup.y, 5, 5, 13, 0xffd166, 0.96);
+      existing.setPosition(pickup.x, pickup.y);
+      existing.setVisible(!pickup.collected);
+      existing.setFillStyle(pickup.color, 0.96);
+      existing.setStrokeStyle(2, pickup.strokeColor, 0.75);
+      objects.doorKeyPickups.set(pickup.id, existing);
+    }
+
     if (!objects.key) {
       objects.key = scene.add.star(
         descriptors.objectives.key.x,
@@ -329,10 +438,12 @@ export class GameRenderer {
         5,
         8,
         18,
-        0xffd166,
+        descriptors.objectives.key.color,
       );
     }
     objects.key.setVisible(!descriptors.objectives.key.collected);
+    objects.key.setFillStyle(descriptors.objectives.key.color, 0.96);
+    objects.key.setStrokeStyle(3, descriptors.objectives.key.strokeColor, 0.86);
 
     if (!objects.exit) {
       objects.exit = scene.add.rectangle(
@@ -347,6 +458,21 @@ export class GameRenderer {
     objects.exit.setStrokeStyle(3, descriptors.objectives.exit.unlocked ? 0xa6e3af : 0xffb35c, 0.8);
 
     const liveGuardIds = new Set<string>();
+    const draggedGuard = descriptors.guards.find((guard) => guard.dragging && !guard.hiddenBody);
+    if (draggedGuard) {
+      const line = objects.bodyDragLine ?? scene.add.graphics();
+      objects.bodyDragLine = line;
+      line.clear();
+      line.setDepth(32);
+      line.lineStyle(5, 0x8bd3ff, 0.45);
+      line.beginPath();
+      line.moveTo(descriptors.player.x, descriptors.player.y);
+      line.lineTo(draggedGuard.x, draggedGuard.y);
+      line.strokePath();
+    } else {
+      objects.bodyDragLine?.clear();
+    }
+
     for (const guard of descriptors.guards) {
       liveGuardIds.add(guard.id);
       let container = objects.guards.get(guard.id);
@@ -358,8 +484,10 @@ export class GameRenderer {
         objects.guards.set(guard.id, container);
       }
       container.setPosition(guard.x, guard.y);
+      container.setVisible(!guard.hiddenBody);
       container.setAlpha(guard.bodyState === "active" ? (guard.state === "search" ? 0.88 : 1) : 0.68);
       container.setRotation(guard.bodyState === "dead" ? Math.PI / 2 : guard.bodyState === "knocked_out" ? -Math.PI / 2 : 0);
+      container.setScale(guard.dragging ? 0.92 : 1);
 
       let cone = objects.guardCones.get(guard.id);
       if (!cone) {
@@ -535,6 +663,90 @@ export class GameRenderer {
       onComplete: () => {
         pebble.setVisible(false).setScale(1);
         onLanded();
+      },
+    });
+  }
+
+  spawnCombatFeedback(
+    scene: Phaser.Scene,
+    origin: Vector,
+    target: Vector,
+    kind: "melee" | "gun" | "guard_melee",
+  ): void {
+    if (!this.objects) {
+      this.mount(scene);
+    }
+    const objects = this.objects as RenderObjects;
+    const graphic = scene.add.graphics();
+    objects.combatEffects.push(graphic);
+    graphic.setDepth(35);
+
+    const originX = world(origin.x);
+    const originY = world(origin.y);
+    const targetX = world(target.x);
+    const targetY = world(target.y);
+    const angle = Math.atan2(targetY - originY, targetX - originX);
+
+    if (kind === "gun") {
+      graphic.lineStyle(4, 0xfff0b8, 0.95);
+      graphic.beginPath();
+      graphic.moveTo(originX + Math.cos(angle) * 18, originY + Math.sin(angle) * 18);
+      graphic.lineTo(targetX, targetY);
+      graphic.strokePath();
+      graphic.fillStyle(0xffd166, 0.95);
+      graphic.fillCircle(originX + Math.cos(angle) * 22, originY + Math.sin(angle) * 22, 9);
+    } else if (kind === "guard_melee") {
+      const radius = 32;
+      const reachX = originX + Math.cos(angle) * 28;
+      const reachY = originY + Math.sin(angle) * 28;
+      graphic.lineStyle(8, 0xff6b4a, 0.9);
+      graphic.beginPath();
+      graphic.arc(reachX, reachY, radius, angle - Math.PI / 2.8, angle + Math.PI / 2.8, false);
+      graphic.strokePath();
+      graphic.fillStyle(0xff2f2f, 0.34);
+      graphic.fillCircle(targetX, targetY, 16);
+    } else {
+      const radius = 38;
+      graphic.lineStyle(7, 0xffd166, 0.86);
+      graphic.beginPath();
+      graphic.arc(originX, originY, radius, angle - Math.PI / 3, angle + Math.PI / 3, false);
+      graphic.strokePath();
+      graphic.lineStyle(2, 0xfff0b8, 0.9);
+      graphic.beginPath();
+      graphic.arc(originX, originY, radius + 8, angle - Math.PI / 4, angle + Math.PI / 4, false);
+      graphic.strokePath();
+    }
+
+    scene.tweens.add({
+      targets: graphic,
+      alpha: 0,
+      duration: kind === "gun" ? 120 : kind === "guard_melee" ? 260 : 180,
+      ease: "Sine.easeOut",
+      onComplete: () => {
+        graphic.destroy();
+        objects.combatEffects = objects.combatEffects.filter((effect) => effect !== graphic);
+      },
+    });
+  }
+
+  spawnHealFeedback(scene: Phaser.Scene, position: Vector): void {
+    if (!this.objects) {
+      this.mount(scene);
+    }
+    const objects = this.objects as RenderObjects;
+    const glow = scene.add.circle(world(position.x), world(position.y), 26, 0x72d18b, 0.38);
+    objects.combatEffects.push(glow as unknown as Phaser.GameObjects.Graphics);
+    glow.setDepth(34);
+    glow.setStrokeStyle(4, 0xcfffd5, 0.92);
+    scene.tweens.add({
+      targets: glow,
+      radius: 52,
+      alpha: 0,
+      duration: 1000,
+      ease: "Sine.easeOut",
+      onComplete: () => {
+        glow.destroy();
+        objects.combatEffects = objects.combatEffects.filter((effect) => effect !== (glow as unknown as Phaser.GameObjects.Graphics));
       },
     });
   }

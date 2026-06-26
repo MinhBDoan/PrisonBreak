@@ -18,7 +18,8 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   const app = express();
 
   app.use(localBrowserCors);
-  app.use(express.json());
+  app.use(express.json({ limit: "2mb" }));
+  app.use(jsonBodyErrorHandler);
   app.use("/api/ready", createReadinessRouter(dependencies));
   if (dependencies.database) {
     app.use("/api/runs", createRunsRouter({ database: dependencies.database, codexProcessRunner: dependencies.codexProcessRunner }));
@@ -27,13 +28,53 @@ export function createApp(dependencies: AppDependencies = {}): Express {
   return app;
 }
 
+function jsonBodyErrorHandler(
+  error: unknown,
+  _request: express.Request,
+  response: express.Response,
+  next: express.NextFunction,
+): void {
+  if (isRequestEntityTooLarge(error)) {
+    response.status(413).json({
+      error: {
+        code: "request_too_large",
+        message: "Run completion payload is too large. Please retry with a shorter run.",
+        retryable: false,
+      },
+    });
+    return;
+  }
+
+  if (error instanceof SyntaxError) {
+    response.status(400).json({
+      error: {
+        code: "invalid_json",
+        message: "Request body must be valid JSON.",
+        retryable: false,
+      },
+    });
+    return;
+  }
+
+  next(error);
+}
+
+function isRequestEntityTooLarge(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "type" in error &&
+    (error as { type?: unknown }).type === "entity.too.large"
+  );
+}
+
 function localBrowserCors(
   request: express.Request,
   response: express.Response,
   next: express.NextFunction,
 ): void {
   const origin = request.header("origin");
-  if (origin === "http://127.0.0.1:5173" || origin === "http://localhost:5173") {
+  if (origin && /^http:\/\/(127\.0\.0\.1|localhost):517\d$/.test(origin)) {
     response.header("Access-Control-Allow-Origin", origin);
     response.header("Vary", "Origin");
     response.header("Access-Control-Allow-Headers", "Content-Type");

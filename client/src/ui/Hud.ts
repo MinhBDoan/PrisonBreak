@@ -3,6 +3,8 @@ import type { SimulationSnapshot } from "../game/types";
 import type { BlockingError, CompleteRunResponse, RunOutcome } from "../../../shared/contracts";
 import { weapons } from "../game/weapons";
 
+export type HudSelectedSlot = "melee" | "gun" | "misc";
+
 export type HudBanner = {
   text: string;
   tone: "neutral" | "warn" | "danger" | "success";
@@ -10,8 +12,16 @@ export type HudBanner = {
 
 export type HudModel = {
   objective: string;
+  levelLabel: string;
+  sectionLabel: string;
   keyLabel: string;
+  keyInventoryLabel: string;
+  hasGeneralKey: boolean;
+  hasMasterKey: boolean;
   pebbleCount: number;
+  miscLabel: string;
+  miscCountLabel: string;
+  selectedSlot: HudSelectedSlot;
   healthLabel: string;
   healthPercent: number;
   meleeLabel: string;
@@ -34,12 +44,20 @@ function interactionPrompt(snapshot: SimulationSnapshot): string {
   if (snapshot.player.hiddenIn) {
     return "Press E to leave hiding";
   }
+  if (snapshot.player.draggingBodyId) {
+    const nearDumpSpot = prisonMap.hidingSpots.some((spot) => distance(spot.position, snapshot.player.position) < 0.9);
+    return nearDumpSpot ? "Press E to dump body" : "Drag body to a locker or shadow";
+  }
   const nearHiding = prisonMap.hidingSpots.find((spot) => distance(spot.position, snapshot.player.position) < 0.75);
   if (nearHiding) {
+    const bodyInSpot = snapshot.guards.some((guard) => guard.bodyHiddenIn === nearHiding.id);
+    if (bodyInSpot) {
+      return "Body hidden here";
+    }
     return `Press E to hide in ${nearHiding.type === "locker" ? "locker" : "shadow"}`;
   }
   if (!snapshot.objectives.hasKey && distance(prisonMap.key.position, snapshot.player.position) < 0.8) {
-    return "Press E to take security key";
+    return "Press E to pick up master key";
   }
   const nearPebble = snapshot.pebbles.some(
     (pebble) => !pebble.collected && distance(pebble.position, snapshot.player.position) < 0.75,
@@ -53,8 +71,39 @@ function interactionPrompt(snapshot: SimulationSnapshot): string {
   if (nearWeapon) {
     return `Press E to pick up ${weapons[nearWeapon.weaponId].label}`;
   }
+  const nearBandages = snapshot.healingPickups.find(
+    (pickup) => !pickup.collected && distance(pickup.position, snapshot.player.position) < 0.75,
+  );
+  if (nearBandages) {
+    return "Press E to pick up bandages";
+  }
+  const nearDoorKey = snapshot.doorKeyPickups.find(
+    (pickup) => !pickup.collected && distance(pickup.position, snapshot.player.position) < 0.75,
+  );
+  if (nearDoorKey) {
+    return "Press E to pick up general key";
+  }
+  const nearBody = snapshot.guards.find(
+    (guard) =>
+      guard.bodyState &&
+      guard.bodyState !== "active" &&
+      !guard.bodyHiddenIn &&
+      distance(guard.position, snapshot.player.position) < 0.85,
+  );
+  if (nearBody) {
+    return "Press E to drag body";
+  }
+  const nearDoor = snapshot.doors.find((door) => distance(door.position, snapshot.player.position) < 0.85);
+  if (nearDoor) {
+    if (!nearDoor.unlocked) {
+      return nearDoor.keyId && snapshot.player.doorKeys.includes(nearDoor.keyId)
+        ? "Press E to unlock door"
+        : "General key required";
+    }
+    return nearDoor.open ? "Press E to close door" : "Press E to open door";
+  }
   if (distance(prisonMap.exit.position, snapshot.player.position) < 0.9) {
-    return snapshot.objectives.hasKey ? "Press E to unlock exit" : "Find the key before using the exit";
+    return snapshot.objectives.hasKey ? "Press E to unlock exit" : "Find the master key";
   }
   if (snapshot.player.pebbles > 0) {
     return "Hold left mouse to charge throw, release to throw";
@@ -102,7 +151,7 @@ function alertTone(level: string): HudBanner["tone"] {
   return "neutral";
 }
 
-export function createHudModel(snapshot: SimulationSnapshot): HudModel {
+export function createHudModel(snapshot: SimulationSnapshot, selectedSlot: HudSelectedSlot = "melee"): HudModel {
   const health = snapshot.player.health ?? { entityId: "player", hp: 100, maxHp: 100, isDown: false };
   const weaponState = snapshot.player.weapons;
   const gunId = weaponState?.primaryGunId ?? weaponState?.sidearmId ?? null;
@@ -112,18 +161,29 @@ export function createHudModel(snapshot: SimulationSnapshot): HudModel {
   const reloadLabel = weaponState?.reload
     ? `Reloading ${Math.ceil(weaponState.reload.remainingMs / 1000)}s`
     : "Ready";
+  const equippedGunIsReloading = Boolean(gun && weaponState?.reload?.weaponId === gun.id);
   const maxSuspicion = Math.max(0, ...snapshot.guards.map((guard) => guard.suspicion));
   const alert = snapshot.alert ?? { level: "calm", pressure: 0, armedResponseTriggered: false };
+  const hasGeneralKey = snapshot.player.doorKeys.includes("general_key");
+  const hasMasterKey = snapshot.objectives.hasKey;
 
   return {
-    objective: snapshot.objectives.hasKey ? "Reach the locked exit" : "Find the security key",
+    objective: snapshot.objectives.hasKey ? "Reach the next section door" : "Find the master key",
+    levelLabel: snapshot.level.name,
+    sectionLabel: snapshot.level.section,
     keyLabel: snapshot.objectives.hasKey ? "secured" : "missing",
+    keyInventoryLabel: `General ${hasGeneralKey ? "yes" : "no"} | Master ${hasMasterKey ? "yes" : "no"}`,
+    hasGeneralKey,
+    hasMasterKey,
     pebbleCount: snapshot.player.pebbles,
+    miscLabel: "Pebble",
+    miscCountLabel: String(snapshot.player.pebbles),
+    selectedSlot,
     healthLabel: `${Math.ceil(health.hp)} / ${Math.ceil(health.maxHp)}`,
     healthPercent: Math.round((health.hp / Math.max(1, health.maxHp)) * 100),
     meleeLabel: weapons[weaponState?.meleeWeaponId ?? "fists"].label,
     gunLabel: gun?.label ?? "No gun",
-    ammoLabel: gun ? `${loadedAmmo} / ${reserveAmmo}` : "-",
+    ammoLabel: gun ? (equippedGunIsReloading ? reloadLabel : `${loadedAmmo} / ${reserveAmmo}`) : "-",
     reloadLabel,
     healingItemsLabel: String(weaponState?.healingItems ?? 0),
     alertLabel: formatAlertLevel(alert.level),
@@ -155,8 +215,8 @@ export class Hud {
     this.root.classList.add("hud");
   }
 
-  update(snapshot: SimulationSnapshot): void {
-    const model = createHudModel(snapshot);
+  update(snapshot: SimulationSnapshot, selectedSlot: HudSelectedSlot = "melee"): void {
+    const model = createHudModel(snapshot, selectedSlot);
     const healthPercent = escapePercent(model.healthPercent);
     const suspicionPercent = escapePercent(model.suspicionPercent);
 
@@ -165,8 +225,19 @@ export class Hud {
         <div class="hud__eyebrow">Objective</div>
         <div class="hud__objective">${escapeHtml(model.objective)}</div>
         <div class="hud__row">
+          <span>Level</span>
+          <strong>${escapeHtml(model.levelLabel)}</strong>
+        </div>
+        <div class="hud__row">
           <span>Key</span>
           <strong>${escapeHtml(model.keyLabel)}</strong>
+        </div>
+        <div class="hud__row hud__row--keys">
+          <span>Keys</span>
+          <div class="hud__key-list" aria-label="${escapeHtml(model.keyInventoryLabel)}">
+            <span class="hud__key-chip hud__key-chip--general ${model.hasGeneralKey ? "hud__key-chip--owned" : ""}">General</span>
+            <span class="hud__key-chip hud__key-chip--master ${model.hasMasterKey ? "hud__key-chip--owned" : ""}">Master</span>
+          </div>
         </div>
         <div class="hud__row">
           <span>Pebbles</span>
@@ -190,16 +261,22 @@ export class Hud {
         </div>
       </section>
       <section class="hud__equipment" aria-label="Equipment">
-        <div class="hud__slot hud__slot--active">
+        <div class="hud__slot hud__slot--active ${model.selectedSlot === "melee" ? "hud__slot--selected" : ""}">
           <span class="hud__slot-key">1</span>
           <span class="hud__slot-label">Melee</span>
           <strong>${escapeHtml(model.meleeLabel)}</strong>
         </div>
-        <div class="hud__slot hud__slot--active">
+        <div class="hud__slot hud__slot--active ${model.selectedSlot === "gun" ? "hud__slot--selected" : ""}">
           <span class="hud__slot-key">2</span>
           <span class="hud__slot-label">Gun</span>
           <strong>${escapeHtml(model.gunLabel)}</strong>
           <span class="hud__slot-meta">${escapeHtml(model.ammoLabel)}</span>
+        </div>
+        <div class="hud__slot hud__slot--active ${model.selectedSlot === "misc" ? "hud__slot--selected" : ""}">
+          <span class="hud__slot-key">3</span>
+          <span class="hud__slot-label">Misc</span>
+          <strong>${escapeHtml(model.miscLabel)}</strong>
+          <span class="hud__slot-meta">${escapeHtml(model.miscCountLabel)}</span>
         </div>
         <div class="hud__slot">
           <span class="hud__slot-key">R</span>

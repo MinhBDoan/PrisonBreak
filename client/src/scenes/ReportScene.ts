@@ -68,6 +68,7 @@ export class ReportScene extends Phaser.Scene {
               message: error instanceof Error ? error.message : "Completion failed.",
               retryable: true,
             };
+      this.submitting = false;
       this.hud.showReportError(blockingError, () => {
         void this.submitCompletion();
       });

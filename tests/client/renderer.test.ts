@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
+import { prisonMap } from "../../client/src/game/map";
 import { clampThrowTarget, GameRenderer } from "../../client/src/render/GameRenderer";
 import type { SimulationSnapshot } from "../../client/src/game/types";
 
@@ -48,15 +49,83 @@ describe("GameRenderer", () => {
       "locker_bravo",
       "shadow_nook",
     ]);
-    expect(descriptors.coverObjects).toEqual([
+    expect(descriptors.hidingSpots.some((spot) => spot.bodyOccupied)).toBe(false);
+    expect(descriptors.coverObjects).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: "crate_central_alpha",
         width: expect.any(Number),
         height: expect.any(Number),
       }),
+      expect.objectContaining({ id: "security_room_west_wall" }),
+      expect.objectContaining({ id: "security_room_north_wall" }),
+      expect.objectContaining({ id: "security_room_south_wall_left" }),
+      expect.objectContaining({ id: "security_room_south_wall_right" }),
+      expect.objectContaining({ id: "central_service_wall_left" }),
+      expect.objectContaining({ id: "central_service_wall_right" }),
+    ]));
+    expect(descriptors.doors).toEqual([
+      expect.objectContaining({
+        id: "security_room_door",
+        open: false,
+        unlocked: false,
+      }),
+      expect.objectContaining({
+        id: "central_service_door",
+        x: 928,
+        y: 380.8,
+        hingeX: 897.6,
+        hingeY: 380.8,
+        originX: 0,
+        originY: 0.5,
+        visualRotation: 0,
+        open: false,
+        unlocked: true,
+      }),
     ]);
-    expect(descriptors.objectives.key.id).toBe("security_key");
+    expect(descriptors.objectives.key.id).toBe("master_key");
+    expect(descriptors.objectives.key.color).toBe(0x57d7ff);
+    expect(descriptors.objectives.key.strokeColor).toBe(0xd7f7ff);
     expect(descriptors.objectives.exit.id).toBe("locked_exit");
+  });
+
+  it("swings open doors around a hinge edge instead of their center", () => {
+    const simulation = new GameSimulation();
+    simulation.setPlayerPosition({ x: 14.5, y: 6.45 });
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    const door = new GameRenderer()
+      .describe(simulation.getSnapshot())
+      .doors.find((candidate) => candidate.id === "central_service_door");
+
+    expect(door).toMatchObject({
+      open: true,
+      hingeX: 897.6,
+      hingeY: 380.8,
+      originX: 0,
+      originY: 0.5,
+      visualRotation: Math.PI / 2,
+    });
+  });
+
+  it("uses a visibly different render color for general key drops", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-1", position: { x: 18.5, y: 4.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 21.5, y: 2.5 });
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    simulation.setPlayerPosition({ x: 18.5, y: 4.0 });
+    simulation.playerAttack("guard-1", "pistol");
+    simulation.playerAttack("guard-1", "pistol");
+
+    const descriptors = new GameRenderer().describe(simulation.getSnapshot());
+
+    expect(descriptors.doorKeyPickups).toContainEqual(
+      expect.objectContaining({
+        keyId: "general_key",
+        color: 0xffd166,
+        strokeColor: 0xfff0b8,
+      }),
+    );
   });
 
   it("warms guard vision cones toward red as capture progress rises", () => {
@@ -105,6 +174,8 @@ describe("GameRenderer", () => {
     expect(guard).toMatchObject({
       id: "guard-a",
       bodyState: "knocked_out",
+      dragging: false,
+      hiddenBody: false,
       health: {
         entityId: "guard-a",
         hp: 0,
@@ -113,6 +184,35 @@ describe("GameRenderer", () => {
       },
       visionCone: null,
     });
+  });
+
+  it("marks dragged and dumped bodies for placeholder body handling visuals", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+    let result = simulation.playerAttack("guard-a", "fists");
+    while (result?.bodyState === "active") {
+      result = simulation.playerAttack("guard-a", "fists");
+    }
+    simulation.setPlayerPosition({ x: 3.2, y: 2.5 });
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    expect(new GameRenderer().describe(simulation.getSnapshot()).guards[0]).toMatchObject({
+      dragging: true,
+      hiddenBody: false,
+    });
+
+    simulation.setPlayerPosition(prisonMap.hidingSpots[2].position);
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    expect(new GameRenderer().describe(simulation.getSnapshot()).guards[0]).toMatchObject({
+      dragging: false,
+      hiddenBody: true,
+    });
+    expect(new GameRenderer().describe(simulation.getSnapshot()).hidingSpots).toContainEqual(
+      expect.objectContaining({ id: "shadow_nook", bodyOccupied: true }),
+    );
   });
 
   it("keeps one noise pulse and follows the latest player position during cooldown", () => {

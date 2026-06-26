@@ -6,7 +6,8 @@ import { DetectionSystem } from "./DetectionSystem";
 import { GuardFSM, type GuardRuntime } from "./GuardFSM";
 import { applyDamage, createHealthState } from "./HealthSystem";
 import { HidingSystem } from "./HidingSystem";
-import { collidesWithSolidObjects, corridorAt, isWall, prisonMap } from "./map";
+import { levelById } from "./levels";
+import { collidesWithSolidObjects, corridorAt, isWall, overlapsRectangle, prisonMap } from "./map";
 import { NoiseSystem, type NoiseEvent } from "./NoiseSystem";
 import { ObjectiveSystem } from "./ObjectiveSystem";
 import { RunEventCollector } from "./RunEventCollector";
@@ -16,9 +17,12 @@ import type {
   AlertState,
   BodySystemState,
   CombatResult,
+  DoorKeyId,
+  DoorKeyPickup,
   GuardOverride,
   HealthState,
   PlayerState,
+  PrisonLevel,
   PrisonMap,
   SimulationInput,
   SimulationOptions,
@@ -38,21 +42,30 @@ const noiseSuspicion = {
   sprint: 0.18,
   pebble: 0.22,
   weapon: 0.3,
+  reload: 0.16,
 };
 const noiseChaseDurationMs = 3000;
 const wallCollisionRadius = 0.35;
 const playerObjectCollisionRadius = 0.28;
 const pebblePickupRadius = 0.7;
 const weaponPickupRadius = 0.75;
+const healingPickupRadius = 0.75;
+const doorInteractRadius = 0.85;
+const doorKeyPickupRadius = 0.75;
 const pebbleThrowRange = 4;
 const pebbleNoiseRadius = 3.8;
 const pebbleFlightMs = 300;
-const guardContactDamage = 20;
-const guardContactCooldownMs = 1000;
+const guardContactDamage = 10;
+const guardContactCooldownMs = 2200;
 const guardContactRange = 0.5;
 const bodyDiscoveryRange = 3.2;
-const bodyWakeDelayMs = 800;
+const bodyWakeDelayMs = 2000;
+const bodyInteractRadius = 0.85;
+const bodyDumpRadius = 0.9;
 const healingAmount = 35;
+const reloadNoiseIntensity = 24;
+const projectileTraceStep = 0.05;
+const projectileTraceCollisionRadius = 0.03;
 
 type PendingPebbleImpact = {
   origin: Vector;
@@ -89,6 +102,41 @@ function wallBetween(map: PrisonMap, from: Vector, to: Vector): boolean {
     }
   }
   return false;
+}
+
+function projectileEndpoint(
+  map: PrisonMap,
+  origin: Vector,
+  direction: Vector,
+  maxDistance: number,
+  isBlocked: (position: Vector) => boolean = () => false,
+): Vector {
+  const normalized = normalize(direction);
+  let endpoint = { ...origin };
+
+  for (let distance = projectileTraceStep; distance <= maxDistance; distance += projectileTraceStep) {
+    const position = {
+      x: origin.x + normalized.x * distance,
+      y: origin.y + normalized.y * distance,
+    };
+    if (
+      isWall(map, position) ||
+      isBlocked(position) ||
+      collidesWithSolidObjects(map, position, projectileTraceCollisionRadius)
+    ) {
+      return roundVector(endpoint);
+    }
+    endpoint = position;
+  }
+
+  return roundVector(endpoint);
+}
+
+function roundVector(vector: Vector): Vector {
+  return {
+    x: Math.round(vector.x * 1000) / 1000,
+    y: Math.round(vector.y * 1000) / 1000,
+  };
 }
 
 function cloneGuard(guard: GuardRuntime): GuardRuntime {
@@ -206,6 +254,7 @@ function cloneWeaponState(state: WeaponState): WeaponState {
 }
 
 export class GameSimulation {
+  private readonly level: PrisonLevel;
   private readonly map: PrisonMap;
   private readonly events = new RunEventCollector();
   private readonly hiding: HidingSystem;
@@ -219,7 +268,9 @@ export class GameSimulation {
     position: { x: 1.5, y: 1.5 },
     hasKey: false,
     hiddenIn: null,
+    draggingBodyId: null,
     pebbles: 0,
+    doorKeys: [],
   };
   private playerHealth = createHealthState("player", 100);
   private playerWeapons = createInitialWeaponState();
@@ -229,6 +280,13 @@ export class GameSimulation {
   private bodyState = createBodyState();
   private readonly collectedPebbles = new Set<string>();
   private readonly collectedWeaponPickups = new Set<string>();
+  private readonly collectedHealingPickups = new Set<string>();
+  private readonly openDoors = new Set<string>();
+  private readonly unlockedDoors = new Set<string>();
+  private readonly droppedDoorKeys = new Map<string, DoorKeyPickup>();
+  private readonly collectedDoorKeyPickups = new Set<string>();
+  private readonly carriedDoorKeys = new Set<DoorKeyId>();
+  private readonly droppedCarrierKeys = new Set<string>();
   private readonly pendingPebbleImpacts: PendingPebbleImpact[] = [];
   private readonly pendingWakeups: PendingWakeup[] = [];
   private readonly guardContactCooldowns = new Map<string, number>();
@@ -236,11 +294,12 @@ export class GameSimulation {
   private completed: { outcome: RunOutcome; durationMs: number } | null = null;
 
   constructor(options: SimulationOptions = {}) {
-    this.map = prisonMap;
+    this.level = levelById(options.levelId);
+    this.map = this.level.map;
     this.adaptations = buildAdaptations(options.nextRunConfig?.adaptations);
     this.hiding = new HidingSystem(this.map);
     this.objectives = new ObjectiveSystem(this.map);
-    this.detection = new DetectionSystem(this.map);
+    this.detection = new DetectionSystem(this.map, (position) => this.closedDoorBlocks(position, projectileTraceCollisionRadius));
     this.noise = new NoiseSystem(this.adaptations);
     this.guardFsm = new GuardFSM(this.map, this.adaptations);
     this.guards = applyGuardOverrides(
@@ -252,6 +311,11 @@ export class GameSimulation {
     }
     for (const guard of this.guards) {
       this.guardHealth.set(guard.id, createHealthState(guard.id, 45 + this.adaptations.guardDurabilityLevel * 10));
+    }
+    for (const door of this.map.doors) {
+      if (!door.locked) {
+        this.unlockedDoors.add(door.id);
+      }
     }
   }
 
@@ -276,7 +340,7 @@ export class GameSimulation {
       this.useHealingItem();
     }
     if (input.attack) {
-      this.attackNearestGuard(input.attack);
+      this.attackToward(input.attack.mode, input.attack.target);
     }
     this.resolvePebbleImpacts();
     this.resolvePendingWakeups();
@@ -295,6 +359,7 @@ export class GameSimulation {
         continue;
       }
 
+      this.guardOpenNearbyDoor(guard);
       this.guardFsm.updatePatrol(guard);
       const canSeePlayer = this.detection.canSeePlayer(guard, this.player);
       if (canSeePlayer) {
@@ -372,7 +437,12 @@ export class GameSimulation {
     this.events.record(this.timeMs, {
       type: "attack",
       position: { ...this.player.position },
-      payload: { attackerId: "player", targetId: targetGuardId, weaponId },
+      payload: {
+        attackerId: "player",
+        targetId: targetGuardId,
+        weaponId,
+        targetPosition: { ...target.position },
+      },
     });
 
     const result = resolveAttack({
@@ -416,6 +486,7 @@ export class GameSimulation {
         bodyState: result.bodyState,
         position: { ...target.position },
       });
+      this.dropDoorKeyFromGuard(targetGuardId, target.position);
       this.events.record(this.timeMs, {
         type: result.bodyState === "dead" ? "kill" : "knockout",
         position: { ...target.position },
@@ -429,11 +500,19 @@ export class GameSimulation {
   getSnapshot(): SimulationSnapshot {
     return {
       timeMs: this.timeMs,
+      level: {
+        id: this.level.id,
+        name: this.level.name,
+        section: this.level.section,
+        nextLevelId: this.level.nextLevelId,
+      },
       player: {
         position: { ...this.player.position },
         hasKey: this.player.hasKey,
         hiddenIn: this.player.hiddenIn,
+        draggingBodyId: this.player.draggingBodyId,
         pebbles: this.player.pebbles,
+        doorKeys: [...this.carriedDoorKeys],
         health: { ...this.playerHealth },
         weapons: cloneWeaponState(this.playerWeapons),
       },
@@ -442,7 +521,9 @@ export class GameSimulation {
         const health = this.guardHealth.get(guard.id);
         return {
           ...cloneGuard(guard),
+          position: body ? { ...body.position } : { ...guard.position },
           bodyState: body?.bodyState ?? "active",
+          bodyHiddenIn: body?.hiddenIn,
           health: health ? { ...health } : undefined,
         };
       }),
@@ -457,6 +538,22 @@ export class GameSimulation {
         ...pickup,
         position: { ...pickup.position },
         collected: this.collectedWeaponPickups.has(pickup.id),
+      })),
+      healingPickups: this.map.healingPickups.map((pickup) => ({
+        ...pickup,
+        position: { ...pickup.position },
+        collected: this.collectedHealingPickups.has(pickup.id),
+      })),
+      doors: this.map.doors.map((door) => ({
+        ...door,
+        position: { ...door.position },
+        open: this.openDoors.has(door.id),
+        unlocked: this.unlockedDoors.has(door.id),
+      })),
+      doorKeyPickups: [...this.droppedDoorKeys.values()].map((pickup) => ({
+        ...pickup,
+        position: { ...pickup.position },
+        collected: this.collectedDoorKeyPickups.has(pickup.id),
       })),
       completed: this.completed ? { ...this.completed } : null,
       adaptations: {
@@ -475,22 +572,57 @@ export class GameSimulation {
     };
   }
 
-  private attackNearestGuard(mode: "melee" | "gun"): void {
+  private attackToward(mode: "melee" | "gun", targetPosition: Vector): void {
     const weaponId = mode === "gun" ? (this.playerWeapons.sidearmId ?? this.playerWeapons.primaryGunId) : this.playerWeapons.meleeWeaponId;
     if (!weaponId) {
       return;
     }
     const weapon = weapons[weaponId];
+    const aim = {
+      x: targetPosition.x - this.player.position.x,
+      y: targetPosition.y - this.player.position.y,
+    };
+    const aimLength = Math.hypot(aim.x, aim.y);
+    if (aimLength === 0) {
+      return;
+    }
     const target = this.guards
       .filter((guard) => !this.bodyState.bodies[guard.id])
       .map((guard) => ({
         guard,
         distance: Math.hypot(guard.position.x - this.player.position.x, guard.position.y - this.player.position.y),
+        projection:
+          ((guard.position.x - this.player.position.x) * aim.x +
+            (guard.position.y - this.player.position.y) * aim.y) /
+          aimLength,
       }))
-      .filter(({ guard, distance }) => distance <= weapon.range && this.detection.hasClearRay(this.player.position, guard.position))
-      .sort((a, b) => a.distance - b.distance)[0]?.guard;
+      .map((candidate) => ({
+        ...candidate,
+        missDistance: Math.hypot(
+          candidate.guard.position.x - (this.player.position.x + (aim.x / aimLength) * candidate.projection),
+          candidate.guard.position.y - (this.player.position.y + (aim.y / aimLength) * candidate.projection),
+        ),
+      }))
+      .filter(
+        ({ guard, distance, projection, missDistance }) =>
+          projection >= 0 &&
+          projection <= Math.max(aimLength, weapon.range) &&
+          distance <= weapon.range &&
+          missDistance <= (weapon.kind === "gun" ? 0.45 : 0.65) &&
+          this.detection.hasClearRay(this.player.position, guard.position),
+      )
+      .sort((a, b) => a.projection - b.projection)[0]?.guard;
     if (target) {
       this.playerAttack(target.id, weaponId);
+      return;
+    }
+    if (weapon.kind === "gun" && this.canUseWeapon(weaponId)) {
+      this.recordMissedGunAttack(
+        weaponId,
+        projectileEndpoint(this.map, this.player.position, aim, weapon.range, (position) =>
+          this.closedDoorBlocks(position, projectileTraceCollisionRadius),
+        ),
+      );
     }
   }
 
@@ -521,6 +653,35 @@ export class GameSimulation {
     };
   }
 
+  private recordMissedGunAttack(weaponId: WeaponId, targetPosition: Vector): void {
+    this.consumeAttackAmmo(weaponId);
+    this.events.record(this.timeMs, {
+      type: "attack",
+      position: { ...this.player.position },
+      payload: {
+        attackerId: "player",
+        targetId: null,
+        weaponId,
+        hit: false,
+        targetPosition: { ...targetPosition },
+      },
+    });
+
+    const noiseRadius = weaponSpatialNoiseRadius(weaponId, weapons[weaponId].noise, this.map);
+    const noise: NoiseEvent = {
+      position: { ...this.player.position },
+      radius: noiseRadius,
+      source: "weapon",
+    };
+    this.events.record(this.timeMs, {
+      type: "noise",
+      position: noise.position,
+      payload: { radius: noise.radius, source: noise.source, weaponId },
+    });
+    this.propagateNoise(noise);
+    this.setAlertState(registerNoise(this.alertState, weapons[weaponId].noise));
+  }
+
   private reloadEquippedGun(): void {
     const weaponId = this.playerWeapons.sidearmId ?? this.playerWeapons.primaryGunId;
     if (!weaponId) {
@@ -534,6 +695,22 @@ export class GameSimulation {
         position: { ...this.player.position },
         payload: { weaponId },
       });
+      const reloadNoise: NoiseEvent = {
+        position: { ...this.player.position },
+        radius: 1.5 + reloadNoiseIntensity / 12,
+        source: "reload",
+      };
+      this.events.record(this.timeMs, {
+        type: "noise",
+        position: reloadNoise.position,
+        payload: {
+          radius: reloadNoise.radius,
+          source: reloadNoise.source,
+          weaponId,
+          intensity: reloadNoiseIntensity,
+        },
+      });
+      this.propagateNoise(reloadNoise);
     }
   }
 
@@ -566,6 +743,9 @@ export class GameSimulation {
       if (body.guardId === guard.id || body.discoveredBy) {
         continue;
       }
+      if (body.hiddenIn || this.player.draggingBodyId === body.guardId) {
+        continue;
+      }
       const distance = Math.hypot(guard.position.x - body.position.x, guard.position.y - body.position.y);
       if (distance > range || !this.detection.hasClearRay(guard.position, body.position)) {
         continue;
@@ -581,6 +761,7 @@ export class GameSimulation {
         position: { ...body.position },
         payload: { guardId: guard.id, bodyGuardId: body.guardId, bodyState: body.bodyState },
       });
+      guard.suspicion = Math.max(guard.suspicion, body.bodyState === "dead" ? 0.72 : 0.48);
       this.setAlertState(registerBodyDiscovery(this.alertState, body.bodyState));
       if (body.bodyState === "knocked_out" && !this.pendingWakeups.some((wakeup) => wakeup.guardId === body.guardId)) {
         this.pendingWakeups.push({
@@ -642,6 +823,7 @@ export class GameSimulation {
     }
 
     this.player.position = next;
+    this.updateDraggedBodyPosition();
     const corridorId = corridorAt(this.map, this.player.position);
     this.events.record(this.timeMs, {
       type: input.sprint ? "sprint" : "move",
@@ -722,10 +904,201 @@ export class GameSimulation {
       return true;
     }
 
-    return collidesWithSolidObjects(this.map, position, playerObjectCollisionRadius);
+    return (
+      collidesWithSolidObjects(this.map, position, playerObjectCollisionRadius) ||
+      this.closedDoorBlocks(position, playerObjectCollisionRadius)
+    );
+  }
+
+  private closedDoorBlocks(position: Vector, radius: number): boolean {
+    return this.map.doors.some(
+      (door) => !this.openDoors.has(door.id) && overlapsRectangle(position, radius, door),
+    );
+  }
+
+  private nearestDoor() {
+    return this.map.doors.find(
+      (door) =>
+        Math.hypot(door.position.x - this.player.position.x, door.position.y - this.player.position.y) <=
+        doorInteractRadius,
+    );
+  }
+
+  private dropDoorKeyFromGuard(guardId: string, position: Vector): void {
+    const carrier = this.map.doorKeyCarriers.find((candidate) => candidate.guardId === guardId);
+    if (!carrier || this.droppedCarrierKeys.has(guardId) || this.carriedDoorKeys.has(carrier.keyId)) {
+      return;
+    }
+    this.droppedCarrierKeys.add(guardId);
+    const pickup: DoorKeyPickup = {
+      id: `${carrier.guardId}_${carrier.keyId}`,
+      keyId: carrier.keyId,
+      position: { ...position },
+    };
+    this.droppedDoorKeys.set(pickup.id, pickup);
+  }
+
+  private guardHasDoorKey(guardId: string, keyId: DoorKeyId): boolean {
+    return this.map.doorKeyCarriers.some(
+      (carrier) =>
+        carrier.guardId === guardId &&
+        carrier.keyId === keyId &&
+        !this.droppedCarrierKeys.has(guardId) &&
+        !this.carriedDoorKeys.has(keyId),
+    );
+  }
+
+  private guardOpenNearbyDoor(guard: GuardRuntime): void {
+    const door = this.map.doors.find(
+      (candidate) =>
+        !this.openDoors.has(candidate.id) &&
+        Math.hypot(candidate.position.x - guard.position.x, candidate.position.y - guard.position.y) <=
+          doorInteractRadius,
+    );
+    if (!door) {
+      return;
+    }
+
+    if (!this.unlockedDoors.has(door.id)) {
+      if (!door.keyId || !this.guardHasDoorKey(guard.id, door.keyId)) {
+        return;
+      }
+      this.unlockedDoors.add(door.id);
+      this.events.record(this.timeMs, {
+        type: "door_unlocked",
+        position: { ...door.position },
+        payload: { doorId: door.id, keyId: door.keyId, guardId: guard.id },
+      });
+    }
+
+    this.openDoors.add(door.id);
+    this.events.record(this.timeMs, {
+      type: "door_opened",
+      position: { ...door.position },
+      payload: { doorId: door.id, guardId: guard.id },
+    });
+  }
+
+  private hidingSpotContainsBody(spotId: string): boolean {
+    return Object.values(this.bodyState.bodies).some((body) => body.hiddenIn === spotId);
+  }
+
+  private updateDraggedBodyPosition(): void {
+    if (!this.player.draggingBodyId) {
+      return;
+    }
+    const body = this.bodyState.bodies[this.player.draggingBodyId];
+    if (!body || body.hiddenIn) {
+      this.player.draggingBodyId = null;
+      return;
+    }
+    this.bodyState = addBody(this.bodyState, {
+      ...body,
+      position: { ...this.player.position },
+    });
   }
 
   private interact(direction: Vector): void {
+    if (this.player.draggingBodyId) {
+      const spot = this.map.hidingSpots.find(
+        (candidate) =>
+          Math.hypot(candidate.position.x - this.player.position.x, candidate.position.y - this.player.position.y) <=
+          bodyDumpRadius,
+      );
+      if (spot) {
+        const body = this.bodyState.bodies[this.player.draggingBodyId];
+        if (body) {
+          this.bodyState = addBody(this.bodyState, {
+            ...body,
+            position: { ...spot.position },
+            hiddenIn: spot.id,
+          });
+          this.events.record(this.timeMs, {
+            type: "body_dumped",
+            position: { ...spot.position },
+            payload: { guardId: this.player.draggingBodyId, hidingSpotId: spot.id },
+          });
+        }
+        this.player.draggingBodyId = null;
+      }
+      return;
+    }
+
+    const doorKeyPickup = [...this.droppedDoorKeys.values()].find(
+      (candidate) =>
+        !this.collectedDoorKeyPickups.has(candidate.id) &&
+        Math.hypot(candidate.position.x - this.player.position.x, candidate.position.y - this.player.position.y) <=
+          doorKeyPickupRadius,
+    );
+    if (doorKeyPickup) {
+      this.collectedDoorKeyPickups.add(doorKeyPickup.id);
+      this.carriedDoorKeys.add(doorKeyPickup.keyId);
+      this.events.record(this.timeMs, {
+        type: "door_key_collected",
+        position: { ...doorKeyPickup.position },
+        payload: { pickupId: doorKeyPickup.id, keyId: doorKeyPickup.keyId },
+      });
+      return;
+    }
+
+    const nearbyBody = Object.values(this.bodyState.bodies).find(
+      (body) =>
+        !body.hiddenIn &&
+        Math.hypot(body.position.x - this.player.position.x, body.position.y - this.player.position.y) <=
+          bodyInteractRadius,
+    );
+    if (nearbyBody) {
+      this.player.draggingBodyId = nearbyBody.guardId;
+      this.updateDraggedBodyPosition();
+      this.events.record(this.timeMs, {
+        type: "body_drag_started",
+        position: { ...nearbyBody.position },
+        payload: { guardId: nearbyBody.guardId, bodyState: nearbyBody.bodyState },
+      });
+      return;
+    }
+
+    const door = this.nearestDoor();
+    if (door) {
+      if (!this.unlockedDoors.has(door.id)) {
+        if (door.keyId && this.carriedDoorKeys.has(door.keyId)) {
+          this.unlockedDoors.add(door.id);
+          this.openDoors.add(door.id);
+          this.events.record(this.timeMs, {
+            type: "door_unlocked",
+            position: { ...door.position },
+            payload: { doorId: door.id, keyId: door.keyId },
+          });
+          this.events.record(this.timeMs, {
+            type: "door_opened",
+            position: { ...door.position },
+            payload: { doorId: door.id },
+          });
+        }
+        return;
+      }
+
+      if (this.openDoors.has(door.id)) {
+        if (overlapsRectangle(this.player.position, playerObjectCollisionRadius, door)) {
+          return;
+        }
+        this.openDoors.delete(door.id);
+        this.events.record(this.timeMs, {
+          type: "door_closed",
+          position: { ...door.position },
+          payload: { doorId: door.id },
+        });
+      } else {
+        this.openDoors.add(door.id);
+        this.events.record(this.timeMs, {
+          type: "door_opened",
+          position: { ...door.position },
+          payload: { doorId: door.id },
+        });
+      }
+      return;
+    }
+
     const pebble = this.map.pebbles.find(
       (candidate) =>
         !this.collectedPebbles.has(candidate.id) &&
@@ -760,10 +1133,34 @@ export class GameSimulation {
       return;
     }
 
+    const healingPickup = this.map.healingPickups.find(
+      (candidate) =>
+        !this.collectedHealingPickups.has(candidate.id) &&
+        Math.hypot(candidate.position.x - this.player.position.x, candidate.position.y - this.player.position.y) <=
+          healingPickupRadius,
+    );
+    if (healingPickup) {
+      this.collectedHealingPickups.add(healingPickup.id);
+      this.playerWeapons = {
+        ...this.playerWeapons,
+        ammoByWeapon: { ...this.playerWeapons.ammoByWeapon },
+        reserveAmmoByType: { ...this.playerWeapons.reserveAmmoByType },
+        reload: this.playerWeapons.reload ? { ...this.playerWeapons.reload } : null,
+        healingItems: this.playerWeapons.healingItems + healingPickup.amount,
+      };
+      this.events.record(this.timeMs, {
+        type: "heal_pickup",
+        position: { ...healingPickup.position },
+        payload: { pickupId: healingPickup.id, amount: healingPickup.amount },
+      });
+      return;
+    }
+
     const hidingResult = this.hiding.toggle(
       this.player,
       (position) => !this.collidesWithObstacle(position),
       normalize(direction),
+      (spot) => this.hidingSpotContainsBody(spot.id),
     );
     if (hidingResult.entered) {
       this.events.record(this.timeMs, {
@@ -904,6 +1301,16 @@ export class GameSimulation {
     }
 
     this.guardContactCooldowns.set(guard.id, this.timeMs + guardContactCooldownMs);
+    this.events.record(this.timeMs, {
+      type: "guard_attack",
+      position: { ...guard.position },
+      payload: {
+        guardId: guard.id,
+        targetPosition: { ...this.player.position },
+        damage: guardContactDamage,
+        cooldownMs: guardContactCooldownMs,
+      },
+    });
     this.applyPlayerDamage(guardContactDamage);
   }
 

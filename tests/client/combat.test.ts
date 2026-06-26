@@ -25,7 +25,7 @@ describe("combat weapons and inventory", () => {
         rifle: 0,
       },
       reload: null,
-      healingItems: 1,
+      healingItems: 0,
     });
   });
 

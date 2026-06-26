@@ -30,6 +30,19 @@ describe("combat run contracts", () => {
       }).type,
     ).toBe("attack");
 
+    expect(
+      RunEventSchema.parse({
+        type: "guard_attack",
+        atMs: 1200,
+        position: { x: 5, y: 7 },
+        payload: {
+          guardId: "guard-a",
+          targetPosition: { x: 4.5, y: 7 },
+          damage: 15,
+        },
+      }).type,
+    ).toBe("guard_attack");
+
     expect(RunOutcomeSchema.parse("death")).toBe("death");
 
     expect(

@@ -89,6 +89,42 @@ body {
   font-size: 12px;
 }
 
+.hud__row--keys {
+  align-items: flex-start;
+}
+
+.hud__key-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.hud__key-chip {
+  min-width: 66px;
+  padding: 4px 7px;
+  border: 1px solid rgba(143, 176, 196, 0.28);
+  border-radius: 6px;
+  background: rgba(143, 176, 196, 0.08);
+  color: rgba(213, 229, 238, 0.58);
+  font-size: 10px;
+  font-weight: 900;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.hud__key-chip--general.hud__key-chip--owned {
+  border-color: rgba(255, 209, 102, 0.82);
+  background: rgba(255, 209, 102, 0.2);
+  color: #ffe19b;
+}
+
+.hud__key-chip--master.hud__key-chip--owned {
+  border-color: rgba(87, 215, 255, 0.82);
+  background: rgba(87, 215, 255, 0.18);
+  color: #b9efff;
+}
+
 .hud__prompt {
   color: #f6d99d;
   font-size: 14px;
@@ -150,9 +186,9 @@ body {
   left: 50%;
   bottom: 22px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(118px, 1fr));
+  grid-template-columns: repeat(5, minmax(108px, 1fr));
   gap: 8px;
-  width: min(620px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 32px));
   padding: 8px;
   border: 1px solid rgba(155, 190, 215, 0.2);
   border-radius: 14px;
@@ -179,6 +215,19 @@ body {
 .hud__slot--active {
   border-color: rgba(255, 209, 102, 0.36);
   background: rgba(255, 209, 102, 0.1);
+}
+
+.hud__slot--selected {
+  border-color: rgba(255, 209, 102, 0.95);
+  background: rgba(255, 209, 102, 0.24);
+  box-shadow:
+    0 0 0 1px rgba(255, 240, 184, 0.62) inset,
+    0 0 22px rgba(255, 209, 102, 0.38);
+}
+
+.hud__slot--selected .hud__slot-key {
+  background: #ffd166;
+  color: #17120a;
 }
 
 .hud__slot-key {

@@ -5,6 +5,8 @@ import type { SimulationInput, Vector } from "../game/types";
 import { clampThrowTarget, GameRenderer, renderScale } from "../render/GameRenderer";
 import { Hud } from "../ui/Hud";
 import type { StartRunResponse } from "../../../shared/contracts";
+import type { HudSelectedSlot } from "../ui/Hud";
+import { weapons } from "../game/weapons";
 
 const minPebbleThrowRange = 1;
 const maxPebbleThrowRange = 4;
@@ -36,8 +38,10 @@ export class GameScene extends Phaser.Scene {
   private completionShown = false;
   private paused = false;
   private pendingThrowTarget: Vector | null = null;
+  private pendingAttackTarget: Vector | null = null;
+  private selectedSlot: HudSelectedSlot = "melee";
   private aimingPebble = false;
-  private pebbleAimStartedAtMs = 0;
+  private pebbleAimStartedAtMs = -1;
   private runData: StartRunResponse = {
     runId: 0,
     config: { adaptations: [] },
@@ -59,8 +63,10 @@ export class GameScene extends Phaser.Scene {
     this.completionShown = false;
     this.paused = false;
     this.pendingThrowTarget = null;
+    this.pendingAttackTarget = null;
+    this.selectedSlot = "melee";
     this.aimingPebble = false;
-    this.pebbleAimStartedAtMs = 0;
+    this.pebbleAimStartedAtMs = -1;
     this.cameras.main.setBackgroundColor("#081018");
     this.simulation = new GameSimulation({ nextRunConfig: data.config });
     this.viewRenderer = new GameRenderer();
@@ -97,7 +103,7 @@ export class GameScene extends Phaser.Scene {
     this.viewRenderer.render(this, snapshot);
     this.updatePebbleAim(snapshot);
     this.viewRenderer.followCamera(this, snapshot);
-    this.hud.update(snapshot);
+    this.hud.update(snapshot, this.selectedSlot);
   }
 
   update(): void {
@@ -128,7 +134,7 @@ export class GameScene extends Phaser.Scene {
     this.viewRenderer.render(this, snapshot);
     this.updatePebbleAim(snapshot);
     this.viewRenderer.followCamera(this, snapshot);
-    this.hud.update(snapshot);
+    this.hud.update(snapshot, this.selectedSlot);
 
     if (snapshot.completed && !this.completionShown) {
       this.completionShown = true;
@@ -166,33 +172,55 @@ export class GameScene extends Phaser.Scene {
   }
 
   private consumeAttackInput(): SimulationInput["attack"] {
-    if (this.consumeHeld("Digit2", "2", "Numpad2")) {
-      return "gun";
+    this.consumeSlotSelectionInput();
+    if (this.selectedSlot === "misc") {
+      this.pendingAttackTarget = null;
+      return null;
     }
-    if (this.consumeHeld("Digit1", "1", "Numpad1")) {
-      return "melee";
+    const target = this.pendingAttackTarget;
+    this.pendingAttackTarget = null;
+    if (target) {
+      return { mode: this.selectedSlot, target };
     }
     return null;
   }
 
+  private consumeSlotSelectionInput(): void {
+    if (this.consumeHeld("Digit2", "2", "Numpad2")) {
+      this.selectedSlot = "gun";
+    }
+    if (this.consumeHeld("Digit1", "1", "Numpad1")) {
+      this.selectedSlot = "melee";
+    }
+    if (this.consumeHeld("Digit3", "3", "Numpad3")) {
+      this.selectedSlot = "misc";
+    }
+  }
+
   private beginPebbleAim(pointer: Phaser.Input.Pointer): void {
     const snapshot = this.simulation.getSnapshot();
-    if (this.paused || this.completionShown || snapshot.completed || snapshot.player.pebbles <= 0 || pointer.leftButtonDown() === false) {
+    if (this.paused || this.completionShown || snapshot.completed || pointer.leftButtonDown() === false) {
       return;
     }
-    this.aimingPebble = true;
+    this.consumeSlotSelectionInput();
+    this.aimingPebble = this.selectedSlot === "misc" && snapshot.player.pebbles > 0;
     this.pebbleAimStartedAtMs = this.time.now;
   }
 
   private releasePebbleAim(pointer: Phaser.Input.Pointer): void {
-    if (!this.aimingPebble) {
+    if (!this.aimingPebble && this.pebbleAimStartedAtMs < 0) {
       return;
     }
     const snapshot = this.simulation.getSnapshot();
     const target = this.pointerWorld(pointer);
-    this.pendingThrowTarget = clampThrowTarget(snapshot.player.position, target, this.currentPebbleThrowRange());
+    const heldMs = this.time.now - this.pebbleAimStartedAtMs;
+    if (this.selectedSlot === "misc" && this.aimingPebble && heldMs >= 200) {
+      this.pendingThrowTarget = clampThrowTarget(snapshot.player.position, target, this.currentPebbleThrowRange());
+    } else if (this.selectedSlot !== "misc") {
+      this.pendingAttackTarget = target;
+    }
     this.aimingPebble = false;
-    this.pebbleAimStartedAtMs = 0;
+    this.pebbleAimStartedAtMs = -1;
     this.viewRenderer.hidePebbleAim();
   }
 
@@ -253,6 +281,40 @@ export class GameScene extends Phaser.Scene {
     for (const event of events.slice(this.lastEventCount)) {
       if (event.type === "pebble_throw" && typeof event.payload.landing === "object" && event.payload.landing) {
         this.viewRenderer.spawnPebbleThrow(this, event.position, event.payload.landing as Vector, () => undefined);
+        continue;
+      }
+      if (
+        event.type === "attack" &&
+        typeof event.payload.weaponId === "string" &&
+        typeof event.payload.targetPosition === "object" &&
+        event.payload.targetPosition
+      ) {
+        const weapon = weapons[event.payload.weaponId as keyof typeof weapons];
+        if (weapon) {
+          this.viewRenderer.spawnCombatFeedback(
+            this,
+            event.position,
+            event.payload.targetPosition as Vector,
+            weapon.kind === "gun" ? "gun" : "melee",
+          );
+        }
+        continue;
+      }
+      if (
+        event.type === "guard_attack" &&
+        typeof event.payload.targetPosition === "object" &&
+        event.payload.targetPosition
+      ) {
+        this.viewRenderer.spawnCombatFeedback(
+          this,
+          event.position,
+          event.payload.targetPosition as Vector,
+          "guard_melee",
+        );
+        continue;
+      }
+      if (event.type === "heal") {
+        this.viewRenderer.spawnHealFeedback(this, event.position);
         continue;
       }
       if (event.type !== "noise") {

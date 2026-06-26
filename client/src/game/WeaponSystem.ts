@@ -24,7 +24,7 @@ export function createInitialWeaponState(): WeaponState {
       rifle: 0,
     },
     reload: null,
-    healingItems: 1,
+    healingItems: 0,
   };
 }
 

@@ -3,7 +3,7 @@ import type { AppliedAdaptations, PlayerState, Vector } from "./types";
 export type NoiseEvent = {
   position: Vector;
   radius: number;
-  source: "walk" | "sprint" | "pebble" | "weapon";
+  source: "walk" | "sprint" | "pebble" | "weapon" | "reload";
 };
 
 export class NoiseSystem {

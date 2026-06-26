@@ -28,7 +28,10 @@ function isInsideCover(cover: CoverObject, position: Vector): boolean {
 }
 
 export class DetectionSystem {
-  constructor(private readonly map: PrisonMap) {}
+  constructor(
+    private readonly map: PrisonMap,
+    private readonly blocksRay: (position: Vector) => boolean = () => false,
+  ) {}
 
   canSeePlayer(guard: GuardStateSnapshot, player: PlayerState): boolean {
     if (player.hiddenIn) {
@@ -62,7 +65,11 @@ export class DetectionSystem {
         x: from.x + (to.x - from.x) * t,
         y: from.y + (to.y - from.y) * t,
       };
-      if (isWall(this.map, position) || this.map.coverObjects.some((cover) => isInsideCover(cover, position))) {
+      if (
+        isWall(this.map, position) ||
+        this.blocksRay(position) ||
+        this.map.coverObjects.some((cover) => isInsideCover(cover, position))
+      ) {
         return false;
       }
     }

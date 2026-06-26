@@ -2,16 +2,18 @@ import type { ActiveAdaptation, RunEvent, RunOutcome } from "../../../shared/con
 
 export type Vector = { x: number; y: number };
 export type Tile = "floor" | "wall";
-export type CorridorId = "west_corridor" | "central_corridor" | "east_corridor" | "security_room" | "exit_hall";
+export type CorridorId = "cell_block" | "central_corridor" | "east_corridor" | "security_room" | "exit_hall";
+export type PrisonLevelId = "cell_block" | "security_wing" | "cafeteria_riot" | "maintenance" | "outer_gate";
 export type HidingSpotType = "locker" | "shadow";
 export type GuardState = "patrol" | "investigate" | "search" | "chase" | "return";
+export type DoorKeyId = "general_key";
 
 export type SimulationInput = {
   direction: Vector;
   sprint: boolean;
   interact: boolean;
   throwTarget?: Vector | null;
-  attack?: "melee" | "gun" | null;
+  attack?: { mode: "melee" | "gun"; target: Vector } | null;
   heal?: boolean;
   reload?: boolean;
 };
@@ -45,6 +47,32 @@ export type WeaponPickup = {
   position: Vector;
 };
 
+export type HealingPickup = {
+  id: string;
+  position: Vector;
+  amount: number;
+};
+
+export type Door = {
+  id: string;
+  position: Vector;
+  width: number;
+  height: number;
+  locked: boolean;
+  keyId?: DoorKeyId;
+};
+
+export type DoorKeyCarrier = {
+  guardId: string;
+  keyId: DoorKeyId;
+};
+
+export type DoorKeyPickup = {
+  id: string;
+  keyId: DoorKeyId;
+  position: Vector;
+};
+
 export type PatrolPoint = Vector & {
   corridor: CorridorId;
 };
@@ -63,17 +91,30 @@ export type PrisonMap = {
   exit: ObjectivePoint;
   pebbles: Pebble[];
   weaponPickups: WeaponPickup[];
+  healingPickups: HealingPickup[];
+  doors: Door[];
+  doorKeyCarriers: DoorKeyCarrier[];
   hidingSpots: HidingSpot[];
   coverObjects: CoverObject[];
   patrolRoutes: PatrolRoute[];
   reserveGuardSpawn: Vector;
 };
 
+export type PrisonLevel = {
+  id: PrisonLevelId;
+  name: string;
+  section: string;
+  nextLevelId: PrisonLevelId | null;
+  map: PrisonMap;
+};
+
 export type PlayerState = {
   position: Vector;
   hasKey: boolean;
   hiddenIn: string | null;
+  draggingBodyId: string | null;
   pebbles: number;
+  doorKeys: DoorKeyId[];
 };
 
 export interface HealthState {
@@ -97,6 +138,7 @@ export interface BodyRecord {
   bodyState: Exclude<BodyState, "active">;
   position: Vector;
   discoveredBy?: string;
+  hiddenIn?: string;
 }
 
 export interface BodySystemState {
@@ -115,6 +157,7 @@ export type GuardStateSnapshot = {
   suspicion: number;
   captureProgress: number;
   inspectionTarget: string | null;
+  bodyHiddenIn?: string;
 };
 
 export type AppliedAdaptations = {
@@ -133,6 +176,12 @@ export type AppliedAdaptations = {
 
 export type SimulationSnapshot = {
   timeMs: number;
+  level: {
+    id: PrisonLevelId;
+    name: string;
+    section: string;
+    nextLevelId: PrisonLevelId | null;
+  };
   player: PlayerState & {
     health: HealthState;
     weapons: WeaponState;
@@ -145,6 +194,9 @@ export type SimulationSnapshot = {
   };
   pebbles: Array<Pebble & { collected: boolean }>;
   weaponPickups: Array<WeaponPickup & { collected: boolean }>;
+  healingPickups: Array<HealingPickup & { collected: boolean }>;
+  doors: Array<Door & { open: boolean; unlocked: boolean }>;
+  doorKeyPickups: Array<DoorKeyPickup & { collected: boolean }>;
   completed: { outcome: RunOutcome; durationMs: number } | null;
   adaptations: AppliedAdaptations;
 };
@@ -158,6 +210,7 @@ export type GuardOverride = {
 export type SimulationOptions = {
   nextRunConfig?: { adaptations: ActiveAdaptation[] };
   guardOverrides?: GuardOverride[];
+  levelId?: PrisonLevelId;
 };
 
 export type RunEventDraft = Omit<RunEvent, "atMs">;

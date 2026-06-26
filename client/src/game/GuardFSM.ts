@@ -15,6 +15,7 @@ const chaseThreshold = 1;
 const captureRate = 0.003;
 const guardSpeed = 0.003667;
 const chaseSpeedMultiplier = 1.15;
+const distractionSpeedMultiplier = 7;
 const patrolAdaptationSpeedBonus = 0.2;
 const searchDurationMs = 900;
 const lostSightChaseDurationMs = 6000;
@@ -43,6 +44,54 @@ function moveToward(position: Vector, target: Vector, speed: number): { position
     position: { x: position.x + facing.x * speed, y: position.y + facing.y * speed },
     reached: false,
     facing,
+  };
+}
+
+function rotate(vector: Vector, radians: number): Vector {
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: vector.x * cos - vector.y * sin,
+    y: vector.x * sin + vector.y * cos,
+  };
+}
+
+function steerTowardAvoidingSolidObjects(
+  map: PrisonMap,
+  position: Vector,
+  target: Vector,
+  speed: number,
+): { position: Vector; reached: boolean; facing: Vector } {
+  const direct = moveToward(position, target, speed);
+  if (!collidesWithSolidObjects(map, direct.position, guardObjectCollisionRadius)) {
+    return direct;
+  }
+
+  const desiredFacing = direct.facing;
+  if (desiredFacing.x === 0 && desiredFacing.y === 0) {
+    return direct;
+  }
+
+  const steeringAngles = [Math.PI / 4, Math.PI / 2, (Math.PI * 3) / 4, -Math.PI / 4, -Math.PI / 2, (-Math.PI * 3) / 4];
+  for (const angle of steeringAngles) {
+    const facing = rotate(desiredFacing, angle);
+    const candidate = {
+      position: {
+        x: position.x + facing.x * speed,
+        y: position.y + facing.y * speed,
+      },
+      reached: false,
+      facing,
+    };
+    if (!collidesWithSolidObjects(map, candidate.position, guardObjectCollisionRadius)) {
+      return candidate;
+    }
+  }
+
+  return {
+    position,
+    reached: false,
+    facing: desiredFacing,
   };
 }
 
@@ -109,10 +158,8 @@ export class GuardFSM {
 
     const target = this.nextTarget(route.points, guard);
     const speed = guardSpeed * this.patrolMultiplier(target);
-    const moved = moveToward(guard.position, target, speed);
-    if (!collidesWithSolidObjects(this.map, moved.position, guardObjectCollisionRadius)) {
-      guard.position = moved.position;
-    }
+    const moved = steerTowardAvoidingSolidObjects(this.map, guard.position, target, speed);
+    guard.position = moved.position;
     if (moved.facing.x !== 0 || moved.facing.y !== 0) {
       guard.facing = moved.facing;
     }
@@ -152,10 +199,9 @@ export class GuardFSM {
       }
 
       const chaseTarget = canSeePlayer ? playerPosition : guard.lastSeenPlayerPosition ?? playerPosition;
-      const moved = moveToward(guard.position, chaseTarget, guardSpeed * chaseSpeedMultiplier);
-      if (!collidesWithSolidObjects(this.map, moved.position, guardObjectCollisionRadius)) {
-        guard.position = moved.position;
-      }
+      const chaseMultiplier = nowMs <= guard.distractionUntilMs ? distractionSpeedMultiplier : chaseSpeedMultiplier;
+      const moved = steerTowardAvoidingSolidObjects(this.map, guard.position, chaseTarget, guardSpeed * chaseMultiplier);
+      guard.position = moved.position;
       if (moved.facing.x !== 0 || moved.facing.y !== 0) {
         guard.facing = moved.facing;
       }
