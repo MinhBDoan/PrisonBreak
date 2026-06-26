@@ -1,0 +1,762 @@
+import type Phaser from "phaser";
+import { prisonMap } from "../game/map";
+import type { Door, DoorKeyPickup, GuardStateSnapshot, HealingPickup, HidingSpot, SimulationSnapshot, Vector, WeaponPickup } from "../game/types";
+
+export const renderScale = 64;
+const noiseRippleCooldownMs = 500;
+const pebbleThrowRange = 4;
+
+export type VisionConeDescriptor = {
+  x: number;
+  y: number;
+  rotation: number;
+  radius: number;
+  angle: number;
+  color: number;
+  alpha: number;
+};
+
+export type EntityDescriptor = {
+  id: string;
+  kind: "player" | "guard" | "hidingSpot" | "key" | "exit" | "pebble" | "weaponPickup" | "healingPickup" | "door" | "doorKey";
+  x: number;
+  y: number;
+};
+
+export type KeyVisualDescriptor = {
+  color: number;
+  strokeColor: number;
+};
+
+export type GuardDescriptor = EntityDescriptor & {
+  kind: "guard";
+  state: GuardStateSnapshot["state"];
+  bodyState: NonNullable<GuardStateSnapshot["bodyState"]>;
+  dragging: boolean;
+  hiddenBody: boolean;
+  health: GuardStateSnapshot["health"];
+  suspicion: number;
+  visionCone: VisionConeDescriptor | null;
+};
+
+export type RenderDescriptors = {
+  player: EntityDescriptor & { hidden: boolean };
+  guards: GuardDescriptor[];
+  hidingSpots: Array<EntityDescriptor & { type: HidingSpot["type"]; bodyOccupied: boolean }>;
+  coverObjects: Array<EntityDescriptor & { width: number; height: number }>;
+  pebbles: Array<EntityDescriptor & { collected: boolean }>;
+  weaponPickups: Array<EntityDescriptor & { collected: boolean; weaponId: WeaponPickup["weaponId"] }>;
+  healingPickups: Array<EntityDescriptor & { collected: boolean; amount: HealingPickup["amount"] }>;
+  doors: Array<
+    EntityDescriptor & {
+      width: number;
+      height: number;
+      open: boolean;
+      unlocked: boolean;
+      hingeX: number;
+      hingeY: number;
+      originX: number;
+      originY: number;
+      visualRotation: number;
+    }
+  >;
+  doorKeyPickups: Array<EntityDescriptor & { collected: boolean; keyId: DoorKeyPickup["keyId"] } & KeyVisualDescriptor>;
+  objectives: {
+    key: EntityDescriptor & { collected: boolean } & KeyVisualDescriptor;
+    exit: EntityDescriptor & { unlocked: boolean };
+  };
+  noiseRipples: Array<{ id: string; x: number; y: number; radius: number }>;
+};
+
+type RenderObjects = {
+  floors: Phaser.GameObjects.Rectangle[];
+  walls: Phaser.GameObjects.Rectangle[];
+  lights: Phaser.GameObjects.Arc[];
+  player?: Phaser.GameObjects.Arc;
+  guards: Map<string, Phaser.GameObjects.Container>;
+  guardCones: Map<string, Phaser.GameObjects.Graphics>;
+  hidingSpots: Map<string, Phaser.GameObjects.Rectangle>;
+  coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
+  pebbles: Map<string, Phaser.GameObjects.Arc>;
+  weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
+  healingPickups: Map<string, Phaser.GameObjects.Rectangle>;
+  doors: Map<string, Phaser.GameObjects.Rectangle>;
+  doorKeyPickups: Map<string, Phaser.GameObjects.Star>;
+  aimLine?: Phaser.GameObjects.Graphics;
+  aimMarker?: Phaser.GameObjects.Arc;
+  throwPebble?: Phaser.GameObjects.Arc;
+  bodyDragLine?: Phaser.GameObjects.Graphics;
+  combatEffects: Phaser.GameObjects.Graphics[];
+  key?: Phaser.GameObjects.Star;
+  exit?: Phaser.GameObjects.Rectangle;
+  noiseRipple?: Phaser.GameObjects.Arc;
+};
+
+function world(value: number): number {
+  return value * renderScale;
+}
+
+function arcControlPoint(from: Vector, to: Vector, lift: number): Vector {
+  return {
+    x: (from.x + to.x) / 2,
+    y: Math.min(from.y, to.y) - lift,
+  };
+}
+
+function pointOnQuadratic(from: Vector, control: Vector, to: Vector, progress: number): Vector {
+  const inverse = 1 - progress;
+  return {
+    x: inverse * inverse * from.x + 2 * inverse * progress * control.x + progress * progress * to.x,
+    y: inverse * inverse * from.y + 2 * inverse * progress * control.y + progress * progress * to.y,
+  };
+}
+
+export function clampThrowTarget(origin: Vector, target: Vector, maxRange = pebbleThrowRange): Vector {
+  const dx = target.x - origin.x;
+  const dy = target.y - origin.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance === 0 || distance <= maxRange) {
+    return { ...target };
+  }
+  return {
+    x: origin.x + (dx / distance) * maxRange,
+    y: origin.y + (dy / distance) * maxRange,
+  };
+}
+
+function angleOf(vector: Vector): number {
+  return Math.atan2(vector.y, vector.x);
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function interpolateChannel(from: number, to: number, progress: number): number {
+  return Math.round(from + (to - from) * progress);
+}
+
+function interpolateColor(from: number, to: number, progress: number): number {
+  const amount = clamp01(progress);
+  const red = interpolateChannel((from >> 16) & 0xff, (to >> 16) & 0xff, amount);
+  const green = interpolateChannel((from >> 8) & 0xff, (to >> 8) & 0xff, amount);
+  const blue = interpolateChannel(from & 0xff, to & 0xff, amount);
+  return (red << 16) | (green << 8) | blue;
+}
+
+function guardCone(guard: GuardStateSnapshot): VisionConeDescriptor | null {
+  if (guard.bodyState && guard.bodyState !== "active") {
+    return null;
+  }
+  const captureProgress = guard.state === "chase" ? guard.captureProgress : 0;
+  const alertColor = interpolateColor(0xffc857, 0xff5f56, captureProgress);
+  return {
+    x: world(guard.position.x),
+    y: world(guard.position.y),
+    rotation: angleOf(guard.facing),
+    radius: world(3.2),
+    angle: Math.PI / 4,
+    color: alertColor,
+    alpha: guard.state === "patrol" && guard.suspicion <= 0
+      ? 0.08
+      : guard.state === "chase"
+        ? 0.2 + clamp01(captureProgress) * 0.12
+        : 0.18,
+  };
+}
+
+export class GameRenderer {
+  private objects: RenderObjects | null = null;
+  private lastNoiseRippleAtMs = Number.NEGATIVE_INFINITY;
+
+  describe(snapshot: SimulationSnapshot): RenderDescriptors {
+    return {
+      player: {
+        id: "player",
+        kind: "player",
+        x: world(snapshot.player.position.x),
+        y: world(snapshot.player.position.y),
+        hidden: snapshot.player.hiddenIn !== null,
+      },
+      guards: snapshot.guards.map((guard) => ({
+        id: guard.id,
+        kind: "guard",
+        x: world(guard.position.x),
+        y: world(guard.position.y),
+        state: guard.state,
+        bodyState: guard.bodyState ?? "active",
+        dragging: snapshot.player.draggingBodyId === guard.id,
+        hiddenBody: Boolean(guard.bodyHiddenIn),
+        health: guard.health ? { ...guard.health } : undefined,
+        suspicion: guard.suspicion,
+        visionCone: guardCone(guard),
+      })),
+      hidingSpots: prisonMap.hidingSpots.map((spot) => ({
+        id: spot.id,
+        kind: "hidingSpot",
+        type: spot.type,
+        x: world(spot.position.x),
+        y: world(spot.position.y),
+        bodyOccupied: snapshot.guards.some((guard) => guard.bodyHiddenIn === spot.id),
+      })),
+      coverObjects: prisonMap.coverObjects.map((cover) => ({
+        id: cover.id,
+        kind: "hidingSpot",
+        x: world(cover.position.x),
+        y: world(cover.position.y),
+        width: world(cover.width),
+        height: world(cover.height),
+      })),
+      pebbles: snapshot.pebbles.map((pebble) => ({
+        id: pebble.id,
+        kind: "pebble",
+        x: world(pebble.position.x),
+        y: world(pebble.position.y),
+        collected: pebble.collected,
+      })),
+      weaponPickups: snapshot.weaponPickups.map((pickup) => ({
+        id: pickup.id,
+        kind: "weaponPickup",
+        x: world(pickup.position.x),
+        y: world(pickup.position.y),
+        weaponId: pickup.weaponId,
+        collected: pickup.collected,
+      })),
+      healingPickups: snapshot.healingPickups.map((pickup) => ({
+        id: pickup.id,
+        kind: "healingPickup",
+        x: world(pickup.position.x),
+        y: world(pickup.position.y),
+        amount: pickup.amount,
+        collected: pickup.collected,
+      })),
+      doors: snapshot.doors.map((door) => ({
+        id: door.id,
+        kind: "door",
+        x: world(door.position.x),
+        y: world(door.position.y),
+        width: world(door.width),
+        height: world(door.height),
+        open: door.open,
+        unlocked: door.unlocked,
+        hingeX: world(door.position.x - door.width / 2),
+        hingeY: world(door.position.y),
+        originX: 0,
+        originY: 0.5,
+        visualRotation: door.open ? Math.PI / 2 : 0,
+      })),
+      doorKeyPickups: snapshot.doorKeyPickups.map((pickup) => ({
+        id: pickup.id,
+        kind: "doorKey",
+        x: world(pickup.position.x),
+        y: world(pickup.position.y),
+        keyId: pickup.keyId,
+        color: 0xffd166,
+        strokeColor: 0xfff0b8,
+        collected: pickup.collected,
+      })),
+      objectives: {
+        key: {
+          id: prisonMap.key.id,
+          kind: "key",
+          x: world(prisonMap.key.position.x),
+          y: world(prisonMap.key.position.y),
+          color: 0x57d7ff,
+          strokeColor: 0xd7f7ff,
+          collected: snapshot.objectives.hasKey,
+        },
+        exit: {
+          id: prisonMap.exit.id,
+          kind: "exit",
+          x: world(prisonMap.exit.position.x),
+          y: world(prisonMap.exit.position.y),
+          unlocked: snapshot.objectives.exitUnlocked,
+        },
+      },
+      noiseRipples: [],
+    };
+  }
+
+  mount(scene: Phaser.Scene): void {
+    const floors: Phaser.GameObjects.Rectangle[] = [];
+    const walls: Phaser.GameObjects.Rectangle[] = [];
+    const lights: Phaser.GameObjects.Arc[] = [];
+
+    for (let y = 0; y < prisonMap.height; y += 1) {
+      for (let x = 0; x < prisonMap.width; x += 1) {
+        const isWall = prisonMap.tiles[y][x] === "#";
+        const rect = scene.add
+          .rectangle(
+            world(x + 0.5),
+            world(y + 0.5),
+            renderScale,
+            renderScale,
+            isWall ? 0x111820 : 0x263341,
+          )
+          .setStrokeStyle(1, isWall ? 0x334151 : 0x34495c, isWall ? 0.75 : 0.25);
+        if (isWall) {
+          walls.push(rect);
+        } else {
+          floors.push(rect);
+        }
+      }
+    }
+
+    for (const point of [
+      { x: 8.5, y: 4.5 },
+      { x: 22.5, y: 2.5 },
+      { x: 22.5, y: 9.5 },
+    ]) {
+      lights.push(
+        scene.add
+          .circle(world(point.x), world(point.y), world(1.25), 0xffb35c, 0.09)
+          .setBlendMode("ADD"),
+      );
+    }
+
+    this.objects = {
+      floors,
+      walls,
+      lights,
+      guards: new Map(),
+      guardCones: new Map(),
+      hidingSpots: new Map(),
+      coverObjects: new Map(),
+      pebbles: new Map(),
+      weaponPickups: new Map(),
+      healingPickups: new Map(),
+      doors: new Map(),
+      doorKeyPickups: new Map(),
+      aimLine: undefined,
+      aimMarker: undefined,
+      throwPebble: undefined,
+      bodyDragLine: undefined,
+      combatEffects: [],
+      noiseRipple: undefined,
+    };
+  }
+
+  render(scene: Phaser.Scene, snapshot: SimulationSnapshot): void {
+    if (!this.objects) {
+      this.mount(scene);
+    }
+    const objects = this.objects as RenderObjects;
+    const descriptors = this.describe(snapshot);
+
+    if (!objects.player) {
+      objects.player = scene.add.circle(descriptors.player.x, descriptors.player.y, 18, 0x8bd3ff);
+      objects.player.setStrokeStyle(3, 0xd7f4ff, 0.9);
+    }
+    objects.player.setPosition(descriptors.player.x, descriptors.player.y);
+    objects.player.setAlpha(descriptors.player.hidden ? 0.42 : 1);
+
+    for (const spot of descriptors.hidingSpots) {
+      const color = spot.bodyOccupied ? 0x5b3240 : spot.type === "locker" ? 0x566b7f : 0x151a22;
+      const existing =
+        objects.hidingSpots.get(spot.id) ??
+        scene.add.rectangle(spot.x, spot.y, 34, 46, color, spot.type === "locker" ? 0.9 : 0.72);
+      existing.setPosition(spot.x, spot.y);
+      existing.setFillStyle(color, spot.bodyOccupied ? 0.94 : spot.type === "locker" ? 0.9 : 0.72);
+      existing.setStrokeStyle(
+        2,
+        spot.bodyOccupied ? 0xff7a8a : spot.type === "locker" ? 0x90a9bf : 0x58616d,
+        spot.bodyOccupied ? 0.8 : 0.45,
+      );
+      objects.hidingSpots.set(spot.id, existing);
+    }
+
+    for (const cover of descriptors.coverObjects) {
+      const existing =
+        objects.coverObjects.get(cover.id) ??
+        scene.add.rectangle(cover.x, cover.y, cover.width, cover.height, 0x6b5845, 0.95);
+      existing.setPosition(cover.x, cover.y);
+      existing.setSize(cover.width, cover.height);
+      existing.setFillStyle(0x6b5845, 0.95);
+      existing.setStrokeStyle(2, 0xb28b63, 0.75);
+      objects.coverObjects.set(cover.id, existing);
+    }
+
+    for (const pebble of descriptors.pebbles) {
+      const existing =
+        objects.pebbles.get(pebble.id) ??
+        scene.add.circle(pebble.x, pebble.y, 6, 0xb8aea1, 0.95);
+      existing.setPosition(pebble.x, pebble.y);
+      existing.setVisible(!pebble.collected);
+      existing.setStrokeStyle(2, 0xefe1c8, 0.4);
+      objects.pebbles.set(pebble.id, existing);
+    }
+
+    for (const pickup of descriptors.weaponPickups) {
+      const existing =
+        objects.weaponPickups.get(pickup.id) ??
+        scene.add.rectangle(pickup.x, pickup.y, 26, 12, 0x9aa7b4, 0.96);
+      existing.setPosition(pickup.x, pickup.y);
+      existing.setVisible(!pickup.collected);
+      existing.setRotation(-0.18);
+      existing.setStrokeStyle(2, 0xffd166, 0.78);
+      objects.weaponPickups.set(pickup.id, existing);
+    }
+
+    for (const pickup of descriptors.healingPickups) {
+      const existing =
+        objects.healingPickups.get(pickup.id) ??
+        scene.add.rectangle(pickup.x, pickup.y, 24, 16, 0xcfffd5, 0.96);
+      existing.setPosition(pickup.x, pickup.y);
+      existing.setVisible(!pickup.collected);
+      existing.setStrokeStyle(2, 0x72d18b, 0.85);
+      objects.healingPickups.set(pickup.id, existing);
+    }
+
+    for (const door of descriptors.doors) {
+      const existing =
+        objects.doors.get(door.id) ??
+        scene.add.rectangle(door.hingeX, door.hingeY, door.width, door.height, 0x8f5f34, 0.98);
+      existing.setOrigin(door.originX, door.originY);
+      existing.setPosition(door.hingeX, door.hingeY);
+      existing.setSize(door.width, door.height);
+      existing.setRotation(door.visualRotation);
+      existing.setFillStyle(door.open ? 0x51745a : door.unlocked ? 0x8f5f34 : 0x5a3a28, door.open ? 0.72 : 0.98);
+      existing.setStrokeStyle(3, door.unlocked ? 0xffd166 : 0xc45a4a, 0.86);
+      objects.doors.set(door.id, existing);
+    }
+
+    for (const pickup of descriptors.doorKeyPickups) {
+      const existing =
+        objects.doorKeyPickups.get(pickup.id) ??
+        scene.add.star(pickup.x, pickup.y, 5, 5, 13, 0xffd166, 0.96);
+      existing.setPosition(pickup.x, pickup.y);
+      existing.setVisible(!pickup.collected);
+      existing.setFillStyle(pickup.color, 0.96);
+      existing.setStrokeStyle(2, pickup.strokeColor, 0.75);
+      objects.doorKeyPickups.set(pickup.id, existing);
+    }
+
+    if (!objects.key) {
+      objects.key = scene.add.star(
+        descriptors.objectives.key.x,
+        descriptors.objectives.key.y,
+        5,
+        8,
+        18,
+        descriptors.objectives.key.color,
+      );
+    }
+    objects.key.setVisible(!descriptors.objectives.key.collected);
+    objects.key.setFillStyle(descriptors.objectives.key.color, 0.96);
+    objects.key.setStrokeStyle(3, descriptors.objectives.key.strokeColor, 0.86);
+
+    if (!objects.exit) {
+      objects.exit = scene.add.rectangle(
+        descriptors.objectives.exit.x,
+        descriptors.objectives.exit.y,
+        40,
+        52,
+        0x7a4f2a,
+      );
+    }
+    objects.exit.setFillStyle(descriptors.objectives.exit.unlocked ? 0x5fa76c : 0x7a4f2a, 1);
+    objects.exit.setStrokeStyle(3, descriptors.objectives.exit.unlocked ? 0xa6e3af : 0xffb35c, 0.8);
+
+    const liveGuardIds = new Set<string>();
+    const draggedGuard = descriptors.guards.find((guard) => guard.dragging && !guard.hiddenBody);
+    if (draggedGuard) {
+      const line = objects.bodyDragLine ?? scene.add.graphics();
+      objects.bodyDragLine = line;
+      line.clear();
+      line.setDepth(32);
+      line.lineStyle(5, 0x8bd3ff, 0.45);
+      line.beginPath();
+      line.moveTo(descriptors.player.x, descriptors.player.y);
+      line.lineTo(draggedGuard.x, draggedGuard.y);
+      line.strokePath();
+    } else {
+      objects.bodyDragLine?.clear();
+    }
+
+    for (const guard of descriptors.guards) {
+      liveGuardIds.add(guard.id);
+      let container = objects.guards.get(guard.id);
+      if (!container) {
+        const body = scene.add.rectangle(0, 0, 32, 38, 0xf08a4b);
+        body.setStrokeStyle(2, 0xffcf99, 0.85);
+        const head = scene.add.circle(0, -23, 11, 0xffc78f);
+        container = scene.add.container(guard.x, guard.y, [body, head]);
+        objects.guards.set(guard.id, container);
+      }
+      container.setPosition(guard.x, guard.y);
+      container.setVisible(!guard.hiddenBody);
+      container.setAlpha(guard.bodyState === "active" ? (guard.state === "search" ? 0.88 : 1) : 0.68);
+      container.setRotation(guard.bodyState === "dead" ? Math.PI / 2 : guard.bodyState === "knocked_out" ? -Math.PI / 2 : 0);
+      container.setScale(guard.dragging ? 0.92 : 1);
+
+      let cone = objects.guardCones.get(guard.id);
+      if (!cone) {
+        cone = scene.add.graphics();
+        cone.setDepth(1);
+        objects.guardCones.set(guard.id, cone);
+      }
+      cone.clear();
+      if (guard.visionCone) {
+        cone.fillStyle(guard.visionCone.color, guard.visionCone.alpha);
+        cone.slice(
+          guard.visionCone.x,
+          guard.visionCone.y,
+          guard.visionCone.radius,
+          guard.visionCone.rotation - guard.visionCone.angle,
+          guard.visionCone.rotation + guard.visionCone.angle,
+          false,
+        );
+        cone.fillPath();
+      }
+    }
+
+    for (const [id, container] of objects.guards) {
+      if (!liveGuardIds.has(id)) {
+        container.destroy();
+        objects.guards.delete(id);
+        objects.guardCones.get(id)?.destroy();
+        objects.guardCones.delete(id);
+      }
+    }
+
+    this.clearFinishedRipple();
+  }
+
+  followCamera(scene: Phaser.Scene, snapshot: SimulationSnapshot): void {
+    scene.cameras.main.setBounds(0, 0, world(prisonMap.width), world(prisonMap.height));
+    scene.cameras.main.centerOn(world(snapshot.player.position.x), world(snapshot.player.position.y));
+  }
+
+  spawnNoiseRipple(scene: Phaser.Scene, position: Vector, radius: number): void {
+    if (!this.objects) {
+      return;
+    }
+    const now = typeof scene.time?.now === "number" ? scene.time.now : Date.now();
+    if (now - this.lastNoiseRippleAtMs < noiseRippleCooldownMs) {
+      this.objects.noiseRipple?.setPosition(world(position.x), world(position.y));
+      return;
+    }
+    this.lastNoiseRippleAtMs = now;
+
+    const ripple = this.objects.noiseRipple ?? scene.add.circle(0, 0, 10, 0x8bd3ff, 0);
+    this.objects.noiseRipple = ripple;
+    scene.tweens.killTweensOf?.(ripple);
+    ripple
+      .setPosition(world(position.x), world(position.y))
+      .setRadius(10)
+      .setAlpha(0.65)
+      .setStrokeStyle(3, 0x8bd3ff, 0.65);
+    scene.tweens.add({
+      targets: ripple,
+      radius: world(radius),
+      alpha: 0,
+      duration: 680,
+      ease: "Sine.easeOut",
+      onComplete: () => {
+        ripple.setAlpha(0).setRadius(10);
+      },
+    });
+  }
+
+  showPebbleAim(scene: Phaser.Scene, origin: Vector, target: Vector, maxRange = pebbleThrowRange): Vector {
+    if (!this.objects) {
+      this.mount(scene);
+    }
+    const objects = this.objects as RenderObjects;
+    const landing = clampThrowTarget(origin, target, maxRange);
+    const originX = world(origin.x);
+    const originY = world(origin.y);
+    const landingX = world(landing.x);
+    const landingY = world(landing.y);
+    const control = arcControlPoint({ x: originX, y: originY }, { x: landingX, y: landingY }, 42);
+    const arrowStart = pointOnQuadratic(
+      { x: originX, y: originY },
+      control,
+      { x: landingX, y: landingY },
+      0.88,
+    );
+    const angle = Math.atan2(landingY - arrowStart.y, landingX - arrowStart.x);
+    const arrowLength = 14;
+
+    const aimLine = objects.aimLine ?? scene.add.graphics();
+    objects.aimLine = aimLine;
+    aimLine.clear();
+    aimLine.lineStyle(3, 0xffd166, 0.72);
+    aimLine.beginPath();
+    aimLine.moveTo(originX, originY);
+    for (let point = 1; point <= 18; point += 1) {
+      const arcPoint = pointOnQuadratic(
+        { x: originX, y: originY },
+        control,
+        { x: landingX, y: landingY },
+        point / 18,
+      );
+      aimLine.lineTo(arcPoint.x, arcPoint.y);
+    }
+    aimLine.strokePath();
+    aimLine.lineStyle(2, 0xfff0b8, 0.86);
+    aimLine.beginPath();
+    aimLine.moveTo(landingX, landingY);
+    aimLine.lineTo(
+      landingX - Math.cos(angle - Math.PI / 5) * arrowLength,
+      landingY - Math.sin(angle - Math.PI / 5) * arrowLength,
+    );
+    aimLine.moveTo(landingX, landingY);
+    aimLine.lineTo(
+      landingX - Math.cos(angle + Math.PI / 5) * arrowLength,
+      landingY - Math.sin(angle + Math.PI / 5) * arrowLength,
+    );
+    aimLine.strokePath();
+    aimLine.setDepth(20);
+
+    const marker = objects.aimMarker ?? scene.add.circle(landingX, landingY, 10, 0xffd166, 0.12);
+    objects.aimMarker = marker;
+    marker
+      .setPosition(landingX, landingY)
+      .setVisible(true)
+      .setAlpha(0.9)
+      .setDepth(21)
+      .setStrokeStyle(2, 0xffd166, 0.75);
+
+    return landing;
+  }
+
+  hidePebbleAim(): void {
+    if (!this.objects) {
+      return;
+    }
+    this.objects.aimLine?.clear();
+    this.objects.aimMarker?.setVisible(false);
+  }
+
+  spawnPebbleThrow(
+    scene: Phaser.Scene,
+    origin: Vector,
+    landing: Vector,
+    onLanded: () => void,
+  ): void {
+    if (!this.objects) {
+      return;
+    }
+    const pebble = this.objects.throwPebble ?? scene.add.circle(0, 0, 5, 0xd8c3a5, 1);
+    this.objects.throwPebble = pebble;
+    scene.tweens.killTweensOf?.(pebble);
+    const start = { x: world(origin.x), y: world(origin.y) };
+    const end = { x: world(landing.x), y: world(landing.y) };
+    const control = arcControlPoint(start, end, 42);
+    const flight = { progress: 0 };
+    pebble
+      .setPosition(start.x, start.y)
+      .setScale(1)
+      .setAlpha(1)
+      .setVisible(true)
+      .setDepth(30);
+    scene.tweens.add({
+      targets: flight,
+      progress: 1,
+      duration: 280,
+      ease: "Sine.easeOut",
+      onUpdate: () => {
+        const position = pointOnQuadratic(start, control, end, flight.progress);
+        pebble.setPosition(position.x, position.y).setScale(1 + Math.sin(flight.progress * Math.PI) * 0.55);
+      },
+      onComplete: () => {
+        pebble.setVisible(false).setScale(1);
+        onLanded();
+      },
+    });
+  }
+
+  spawnCombatFeedback(
+    scene: Phaser.Scene,
+    origin: Vector,
+    target: Vector,
+    kind: "melee" | "gun" | "guard_melee",
+  ): void {
+    if (!this.objects) {
+      this.mount(scene);
+    }
+    const objects = this.objects as RenderObjects;
+    const graphic = scene.add.graphics();
+    objects.combatEffects.push(graphic);
+    graphic.setDepth(35);
+
+    const originX = world(origin.x);
+    const originY = world(origin.y);
+    const targetX = world(target.x);
+    const targetY = world(target.y);
+    const angle = Math.atan2(targetY - originY, targetX - originX);
+
+    if (kind === "gun") {
+      graphic.lineStyle(4, 0xfff0b8, 0.95);
+      graphic.beginPath();
+      graphic.moveTo(originX + Math.cos(angle) * 18, originY + Math.sin(angle) * 18);
+      graphic.lineTo(targetX, targetY);
+      graphic.strokePath();
+      graphic.fillStyle(0xffd166, 0.95);
+      graphic.fillCircle(originX + Math.cos(angle) * 22, originY + Math.sin(angle) * 22, 9);
+    } else if (kind === "guard_melee") {
+      const radius = 32;
+      const reachX = originX + Math.cos(angle) * 28;
+      const reachY = originY + Math.sin(angle) * 28;
+      graphic.lineStyle(8, 0xff6b4a, 0.9);
+      graphic.beginPath();
+      graphic.arc(reachX, reachY, radius, angle - Math.PI / 2.8, angle + Math.PI / 2.8, false);
+      graphic.strokePath();
+      graphic.fillStyle(0xff2f2f, 0.34);
+      graphic.fillCircle(targetX, targetY, 16);
+    } else {
+      const radius = 38;
+      graphic.lineStyle(7, 0xffd166, 0.86);
+      graphic.beginPath();
+      graphic.arc(originX, originY, radius, angle - Math.PI / 3, angle + Math.PI / 3, false);
+      graphic.strokePath();
+      graphic.lineStyle(2, 0xfff0b8, 0.9);
+      graphic.beginPath();
+      graphic.arc(originX, originY, radius + 8, angle - Math.PI / 4, angle + Math.PI / 4, false);
+      graphic.strokePath();
+    }
+
+    scene.tweens.add({
+      targets: graphic,
+      alpha: 0,
+      duration: kind === "gun" ? 120 : kind === "guard_melee" ? 260 : 180,
+      ease: "Sine.easeOut",
+      onComplete: () => {
+        graphic.destroy();
+        objects.combatEffects = objects.combatEffects.filter((effect) => effect !== graphic);
+      },
+    });
+  }
+
+  spawnHealFeedback(scene: Phaser.Scene, position: Vector): void {
+    if (!this.objects) {
+      this.mount(scene);
+    }
+    const objects = this.objects as RenderObjects;
+    const glow = scene.add.circle(world(position.x), world(position.y), 26, 0x72d18b, 0.38);
+    objects.combatEffects.push(glow as unknown as Phaser.GameObjects.Graphics);
+    glow.setDepth(34);
+    glow.setStrokeStyle(4, 0xcfffd5, 0.92);
+    scene.tweens.add({
+      targets: glow,
+      radius: 52,
+      alpha: 0,
+      duration: 1000,
+      ease: "Sine.easeOut",
+      onComplete: () => {
+        glow.destroy();
+        objects.combatEffects = objects.combatEffects.filter((effect) => effect !== (glow as unknown as Phaser.GameObjects.Graphics));
+      },
+    });
+  }
+
+  private clearFinishedRipple(): void {
+    if (!this.objects) {
+      return;
+    }
+    if (this.objects.noiseRipple && !this.objects.noiseRipple.active) {
+      this.objects.noiseRipple = undefined;
+    }
+  }
+}

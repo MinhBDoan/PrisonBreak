@@ -4,4 +4,9 @@ dist/
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
 .env
+tmp-live/

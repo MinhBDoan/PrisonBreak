@@ -1,0 +1,503 @@
+import { execFileSync } from "node:child_process";
+import { describe, expect, it, vi } from "vitest";
+import {
+  adaptationAllowlist,
+  adaptationCaps,
+  type AdaptationDecision,
+} from "../../shared/adaptations";
+import { AdaptationValidator } from "../../service/src/services/AdaptationValidator";
+import {
+  BlockingCodexError,
+  CodexService,
+  CODEX_PROCESS_OUTPUT_LIMIT_BYTES,
+  spawnProcess,
+  type ProcessResult,
+  type ProcessRunner,
+} from "../../service/src/services/CodexService";
+import type { BehaviorSummary } from "../../shared/contracts";
+
+const behaviorSummary: BehaviorSummary = {
+  corridorScores: { east_corridor: 4 },
+  hidingSpotScores: { locker_2: 3 },
+  mostUsedCorridor: "east_corridor",
+  favoriteHidingSpot: "locker_2",
+  sprintRatio: 0.5,
+  frequentSprinting: true,
+  detections: 2,
+  successfulEscapes: 3,
+  combat: {
+    primaryStyle: "stealth",
+    favoriteCombatZone: null,
+    gunAttackCount: 0,
+    meleeAttackCount: 0,
+    knockoutCount: 0,
+    killCount: 0,
+    bodyDiscoveryCount: 0,
+    healingUseCount: 0,
+    armedResponseTriggers: 0,
+  },
+};
+
+function decision(overrides: Partial<AdaptationDecision> = {}): AdaptationDecision {
+  return {
+    action: "increase_corridor_patrol",
+    target: "east_corridor",
+    rationale: "Player repeatedly used the east corridor.",
+    ...overrides,
+  };
+}
+
+function runner(result: ProcessResult): ProcessRunner {
+  return vi.fn(async () => result);
+}
+
+function eligibleAdaptationsFrom(processRunner: ProcessRunner): AdaptationDecision[] {
+  const prompt = vi.mocked(processRunner).mock.calls[0][2];
+  const eligibleJson = prompt.match(/Eligible adaptations: (.+)$/m)?.[1];
+  expect(eligibleJson).toBeDefined();
+  return JSON.parse(eligibleJson as string) as AdaptationDecision[];
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (process.platform === "win32") {
+    const output = execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+    });
+    return output
+      .trim()
+      .split(/\r?\n/)
+      .some((line) => line.replace(/^"|"$/g, "").split('","')[1] === String(pid));
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function expectProcessExited(pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (!isProcessAlive(pid)) {
+      expect(isProcessAlive(pid)).toBe(false);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  expect(isProcessAlive(pid)).toBe(false);
+}
+
+describe("adaptation shared contract", () => {
+  it("defines exact adaptation caps and allowlisted actions", () => {
+    expect(adaptationCaps).toEqual({
+      increase_corridor_patrol: 3,
+      inspect_hiding_spot: 2,
+      increase_noise_sensitivity: 2,
+      activate_reserve_guard: 1,
+      add_body_checks: 2,
+      place_armed_response: 2,
+      improve_guard_cover: 2,
+      increase_guard_durability: 2,
+      reduce_ammo_availability: 2,
+      increase_melee_caution: 2,
+      maintain_security_posture: 999,
+    });
+    expect(adaptationAllowlist.map((entry) => entry.action)).toEqual([
+      "increase_corridor_patrol",
+      "inspect_hiding_spot",
+      "increase_noise_sensitivity",
+      "activate_reserve_guard",
+      "add_body_checks",
+      "place_armed_response",
+      "improve_guard_cover",
+      "increase_guard_durability",
+      "reduce_ammo_availability",
+      "increase_melee_caution",
+      "maintain_security_posture",
+    ]);
+  });
+});
+
+describe("AdaptationValidator", () => {
+  it("accepts valid decisions whose target matches the behavior summary", () => {
+    const validator = new AdaptationValidator();
+
+    expect(validator.validate(decision(), behaviorSummary, [])).toEqual(decision());
+    expect(
+      validator.validate(decision({ action: "inspect_hiding_spot", target: "locker_2" }), behaviorSummary, []),
+    ).toEqual(decision({ action: "inspect_hiding_spot", target: "locker_2" }));
+    expect(
+      validator.validate(decision({ action: "increase_noise_sensitivity", target: "global" }), behaviorSummary, []),
+    ).toEqual(decision({ action: "increase_noise_sensitivity", target: "global" }));
+    expect(
+      validator.validate(decision({ action: "maintain_security_posture", target: "global" }), behaviorSummary, []),
+    ).toEqual(decision({ action: "maintain_security_posture", target: "global" }));
+  });
+
+  it("rejects unknown actions and malformed JSON as typed blocking errors", () => {
+    const validator = new AdaptationValidator();
+
+    expect(() =>
+      validator.validate(
+        { action: "teleport_guard", target: "east_corridor", rationale: "Nope." },
+        behaviorSummary,
+        [],
+      ),
+    ).toThrow(BlockingCodexError);
+    expect(() => validator.parseAndValidate("{ nope", behaviorSummary, [])).toThrow(BlockingCodexError);
+  });
+
+  it("rejects choices at capped levels", () => {
+    const validator = new AdaptationValidator();
+
+    expect(() =>
+      validator.validate(decision(), behaviorSummary, [
+        decision(),
+        decision(),
+        decision(),
+      ]),
+    ).toThrow(/cap/i);
+  });
+
+  it("requires repeated successful escapes before activating the reserve guard", () => {
+    const validator = new AdaptationValidator();
+
+    expect(() =>
+      validator.validate(
+        decision({ action: "activate_reserve_guard", target: "exit" }),
+        { ...behaviorSummary, successfulEscapes: 1 },
+        [],
+      ),
+    ).toThrow(/successful escape/i);
+    expect(
+      validator.validate(decision({ action: "activate_reserve_guard", target: "exit" }), behaviorSummary, []),
+    ).toEqual(decision({ action: "activate_reserve_guard", target: "exit" }));
+  });
+});
+
+describe("CodexService", () => {
+  it("spawns the configured executable with a prompt containing summary, allowlist, and eligible adaptations", async () => {
+    const processRunner = runner({
+      exitCode: 0,
+      stdout: JSON.stringify(decision()),
+      stderr: "",
+      timedOut: false,
+    });
+    const service = new CodexService({ executable: "codex-test", processRunner });
+
+    await expect(service.selectAdaptation(behaviorSummary)).resolves.toEqual(decision());
+    const [executable, args, prompt, timeoutMs] = vi.mocked(processRunner).mock.calls[0];
+    expect(executable).toBe("codex-test");
+    expect(args).toEqual(expect.arrayContaining(["exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-last-message", "-"]));
+    expect(timeoutMs).toBe(20_000);
+    expect(prompt).toContain(JSON.stringify(adaptationAllowlist));
+    expect(prompt).toContain("Eligible adaptations");
+    const eligibleJson = prompt.match(/Eligible adaptations: (.+)$/m)?.[1];
+    expect(eligibleJson).toBeDefined();
+    expect(JSON.parse(eligibleJson as string)).toContainEqual(
+      expect.objectContaining({
+        action: "increase_corridor_patrol",
+        target: "east_corridor",
+      }),
+    );
+    expect(prompt).not.toContain("localStorage");
+  });
+
+  it("does not list noise sensitivity as eligible without frequent sprinting", async () => {
+    const processRunner = runner({
+      exitCode: 0,
+      stdout: JSON.stringify(decision()),
+      stderr: "",
+      timedOut: false,
+    });
+    const service = new CodexService({ executable: "codex-test", processRunner });
+
+    await expect(
+      service.selectAdaptation({ ...behaviorSummary, sprintRatio: 0, frequentSprinting: false }),
+    ).resolves.toEqual(decision());
+
+    const eligible = eligibleAdaptationsFrom(processRunner);
+    expect(eligible.map((entry) => entry.action)).not.toContain("increase_noise_sensitivity");
+    expect(eligible).toContainEqual(
+      expect.objectContaining({
+        action: "increase_corridor_patrol",
+        target: "east_corridor",
+      }),
+    );
+  });
+
+  it("lists combat adaptations as eligible when combat evidence exists", async () => {
+    const processRunner = runner({
+      exitCode: 0,
+      stdout: JSON.stringify(
+        decision({
+          action: "place_armed_response",
+          target: "security_room",
+          rationale: "The player relied on gun attacks in the security room.",
+        }),
+      ),
+      stderr: "",
+      timedOut: false,
+    });
+    const service = new CodexService({ executable: "codex-test", processRunner });
+    const combatHeavySummary: BehaviorSummary = {
+      ...behaviorSummary,
+      combat: {
+        primaryStyle: "hybrid",
+        favoriteCombatZone: "security_room",
+        gunAttackCount: 4,
+        meleeAttackCount: 2,
+        knockoutCount: 1,
+        killCount: 1,
+        bodyDiscoveryCount: 1,
+        healingUseCount: 0,
+        armedResponseTriggers: 1,
+      },
+    };
+
+    await expect(service.selectAdaptation(combatHeavySummary)).resolves.toMatchObject({
+      action: "place_armed_response",
+      target: "security_room",
+    });
+
+    expect(eligibleAdaptationsFrom(processRunner)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "place_armed_response", target: "security_room" }),
+        expect.objectContaining({ action: "improve_guard_cover", target: "security_room" }),
+        expect.objectContaining({ action: "reduce_ammo_availability", target: "global" }),
+        expect.objectContaining({ action: "increase_melee_caution", target: "security_room" }),
+        expect.objectContaining({ action: "add_body_checks", target: "security_room" }),
+        expect.objectContaining({ action: "increase_guard_durability", target: "global" }),
+      ]),
+    );
+  });
+
+  it("filters capped combat adaptations from eligible prompt choices", async () => {
+    const processRunner = runner({
+      exitCode: 0,
+      stdout: JSON.stringify(
+        decision({
+          action: "improve_guard_cover",
+          target: "security_room",
+          rationale: "The player relied on gun attacks in the security room.",
+        }),
+      ),
+      stderr: "",
+      timedOut: false,
+    });
+    const service = new CodexService({ executable: "codex-test", processRunner });
+    const gunSummary: BehaviorSummary = {
+      ...behaviorSummary,
+      mostUsedCorridor: null,
+      favoriteHidingSpot: null,
+      frequentSprinting: false,
+      successfulEscapes: 0,
+      combat: {
+        primaryStyle: "gun",
+        favoriteCombatZone: "security_room",
+        gunAttackCount: 3,
+        meleeAttackCount: 0,
+        knockoutCount: 0,
+        killCount: 0,
+        bodyDiscoveryCount: 0,
+        healingUseCount: 0,
+        armedResponseTriggers: 0,
+      },
+    };
+
+    await expect(
+      service.selectAdaptation(gunSummary, [
+        decision({ action: "place_armed_response", target: "security_room" }),
+        decision({ action: "place_armed_response", target: "security_room" }),
+        decision({ action: "reduce_ammo_availability", target: "global" }),
+        decision({ action: "reduce_ammo_availability", target: "global" }),
+      ]),
+    ).resolves.toMatchObject({
+      action: "improve_guard_cover",
+      target: "security_room",
+    });
+
+    const eligibleActions = eligibleAdaptationsFrom(processRunner).map((entry) => entry.action);
+    expect(eligibleActions).not.toContain("place_armed_response");
+    expect(eligibleActions).not.toContain("reduce_ammo_availability");
+    expect(eligibleActions).toContain("improve_guard_cover");
+  });
+
+  it("lists maintain security posture when every specific eligible adaptation is capped", async () => {
+    const maintainDecision = decision({
+      action: "maintain_security_posture",
+      target: "global",
+      rationale: "Every specific eligible response is already capped.",
+    });
+    const processRunner = runner({
+      exitCode: 0,
+      stdout: JSON.stringify(maintainDecision),
+      stderr: "",
+      timedOut: false,
+    });
+    const service = new CodexService({ executable: "codex-test", processRunner });
+
+    await expect(
+      service.selectAdaptation(
+        {
+          ...behaviorSummary,
+          favoriteHidingSpot: null,
+          hidingSpotScores: {},
+          sprintRatio: 0,
+          frequentSprinting: false,
+          successfulEscapes: 0,
+        },
+        [decision(), decision(), decision()],
+      ),
+    ).resolves.toEqual(maintainDecision);
+
+    const prompt = vi.mocked(processRunner).mock.calls[0][2];
+    const eligibleJson = prompt.match(/Eligible adaptations: (.+)$/m)?.[1];
+    expect(JSON.parse(eligibleJson as string)).toEqual([
+      expect.objectContaining({
+        action: "maintain_security_posture",
+        target: "global",
+      }),
+    ]);
+  });
+
+  it("blocks malformed JSON, CLI timeout, and non-zero CLI exit", async () => {
+    await expect(
+      new CodexService({
+        executable: "codex-test",
+        processRunner: runner({ exitCode: 0, stdout: "{ no", stderr: "", timedOut: false }),
+      }).selectAdaptation(behaviorSummary),
+    ).rejects.toThrow(BlockingCodexError);
+
+    await expect(
+      new CodexService({
+        executable: "codex-test",
+        processRunner: runner({ exitCode: null, stdout: "", stderr: "", timedOut: true }),
+      }).selectAdaptation(behaviorSummary),
+    ).rejects.toThrow(/timed out/i);
+
+    await expect(
+      new CodexService({
+        executable: "codex-test",
+        processRunner: runner({ exitCode: 2, stdout: "", stderr: "bad auth", timedOut: false }),
+      }).selectAdaptation(behaviorSummary),
+    ).rejects.toThrow(/bad auth/i);
+  });
+
+  it("blocks process output limit breaches without echoing captured stderr", async () => {
+    await expect(
+      new CodexService({
+        executable: "codex-test",
+        processRunner: runner({
+          exitCode: null,
+          stdout: "",
+          stderr: "x".repeat(CODEX_PROCESS_OUTPUT_LIMIT_BYTES),
+          timedOut: false,
+          outputLimitExceeded: "stderr",
+        }),
+      }).selectAdaptation(behaviorSummary),
+    ).rejects.toMatchObject({
+      code: "output_limit",
+      message: "Codex CLI exceeded stderr output limit.",
+    });
+  });
+
+  it("uses the configured timeout in timeout error messages", async () => {
+    await expect(
+      new CodexService({
+        executable: "codex-test",
+        timeoutMs: 1_234,
+        processRunner: runner({ exitCode: null, stdout: "", stderr: "", timedOut: true }),
+      }).selectAdaptation(behaviorSummary),
+    ).rejects.toThrow("Codex CLI timed out after 1.234 seconds.");
+  });
+});
+
+describe("spawnProcess", () => {
+  it("terminates the child process when stdout exceeds the capture limit", async () => {
+    const result = await spawnProcess(
+      process.execPath,
+      [
+        "-e",
+        [
+          "process.stdout.write(String(process.pid) + '\\n');",
+          `process.stdout.write('x'.repeat(${CODEX_PROCESS_OUTPUT_LIMIT_BYTES + 1}));`,
+          "setInterval(() => {}, 1000);",
+        ].join(""),
+      ],
+      "",
+      5_000,
+    );
+
+    expect(result.outputLimitExceeded).toBe("stdout");
+    expect(result.timedOut).toBe(false);
+    expect(result.stdout.length).toBeLessThanOrEqual(CODEX_PROCESS_OUTPUT_LIMIT_BYTES);
+    await expectProcessExited(Number(result.stdout.split(/\r?\n/)[0]));
+  }, 10_000);
+
+  it("terminates the child process when stderr exceeds the capture limit", async () => {
+    const result = await spawnProcess(
+      process.execPath,
+      [
+        "-e",
+        [
+          "process.stdout.write(String(process.pid) + '\\n');",
+          `process.stderr.write('x'.repeat(${CODEX_PROCESS_OUTPUT_LIMIT_BYTES + 1}));`,
+          "setInterval(() => {}, 1000);",
+        ].join(""),
+      ],
+      "",
+      5_000,
+    );
+
+    expect(result.outputLimitExceeded).toBe("stderr");
+    expect(result.timedOut).toBe(false);
+    expect(result.stderr.length).toBeLessThanOrEqual(CODEX_PROCESS_OUTPUT_LIMIT_BYTES);
+    await expectProcessExited(Number(result.stdout.trim()));
+  }, 10_000);
+
+  it("waits for the child process to close after timeout termination", async () => {
+    const startedAt = Date.now();
+    const result = await spawnProcess(
+      process.execPath,
+      [
+        "-e",
+        [
+          "const { spawn } = require('node:child_process');",
+          `spawn(process.execPath, ['-e', 'setTimeout(() => {}, 300)'], { stdio: ['ignore', 'inherit', 'inherit'] });`,
+          "setInterval(() => {}, 1000);",
+        ].join(""),
+      ],
+      "",
+      25,
+    );
+
+    expect(result.timedOut).toBe(true);
+    if (process.platform !== "win32") {
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(250);
+    }
+  });
+
+  it("escalates timeout cleanup when the child ignores termination", async () => {
+    const result = await spawnProcess(
+      process.execPath,
+      [
+        "-e",
+        [
+          "process.stdout.write(String(process.pid) + '\\n');",
+          "process.on('SIGTERM', () => {});",
+          "setInterval(() => {}, 1000);",
+        ].join(""),
+      ],
+      "",
+      25,
+    );
+
+    expect(result.timedOut).toBe(true);
+    if (process.platform !== "win32") {
+      await expectProcessExited(Number(result.stdout.trim()));
+    }
+  }, 10_000);
+});

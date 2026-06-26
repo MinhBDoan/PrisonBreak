@@ -1,0 +1,395 @@
+import { prisonMap } from "../game/map";
+import type { SimulationSnapshot } from "../game/types";
+import type { BlockingError, CompleteRunResponse, RunOutcome } from "../../../shared/contracts";
+import { weapons } from "../game/weapons";
+
+export type HudSelectedSlot = "melee" | "gun" | "misc";
+
+export type HudBanner = {
+  text: string;
+  tone: "neutral" | "warn" | "danger" | "success";
+};
+
+export type HudModel = {
+  objective: string;
+  levelLabel: string;
+  sectionLabel: string;
+  keyLabel: string;
+  keyInventoryLabel: string;
+  hasGeneralKey: boolean;
+  hasMasterKey: boolean;
+  pebbleCount: number;
+  miscLabel: string;
+  miscCountLabel: string;
+  selectedSlot: HudSelectedSlot;
+  healthLabel: string;
+  healthPercent: number;
+  meleeLabel: string;
+  gunLabel: string;
+  ammoLabel: string;
+  reloadLabel: string;
+  healingItemsLabel: string;
+  alertLabel: string;
+  alertTone: HudBanner["tone"];
+  suspicionPercent: number;
+  prompt: string;
+  banner: HudBanner;
+};
+
+function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function interactionPrompt(snapshot: SimulationSnapshot): string {
+  if (snapshot.player.hiddenIn) {
+    return "Press E to leave hiding";
+  }
+  if (snapshot.player.draggingBodyId) {
+    const nearDumpSpot = prisonMap.hidingSpots.some((spot) => distance(spot.position, snapshot.player.position) < 0.9);
+    return nearDumpSpot ? "Press E to dump body" : "Drag body to a locker or shadow";
+  }
+  const nearHiding = prisonMap.hidingSpots.find((spot) => distance(spot.position, snapshot.player.position) < 0.75);
+  if (nearHiding) {
+    const bodyInSpot = snapshot.guards.some((guard) => guard.bodyHiddenIn === nearHiding.id);
+    if (bodyInSpot) {
+      return "Body hidden here";
+    }
+    return `Press E to hide in ${nearHiding.type === "locker" ? "locker" : "shadow"}`;
+  }
+  if (!snapshot.objectives.hasKey && distance(prisonMap.key.position, snapshot.player.position) < 0.8) {
+    return "Press E to pick up master key";
+  }
+  const nearPebble = snapshot.pebbles.some(
+    (pebble) => !pebble.collected && distance(pebble.position, snapshot.player.position) < 0.75,
+  );
+  if (nearPebble) {
+    return "Press E to pick up pebble";
+  }
+  const nearWeapon = snapshot.weaponPickups.find(
+    (pickup) => !pickup.collected && distance(pickup.position, snapshot.player.position) < 0.75,
+  );
+  if (nearWeapon) {
+    return `Press E to pick up ${weapons[nearWeapon.weaponId].label}`;
+  }
+  const nearBandages = snapshot.healingPickups.find(
+    (pickup) => !pickup.collected && distance(pickup.position, snapshot.player.position) < 0.75,
+  );
+  if (nearBandages) {
+    return "Press E to pick up bandages";
+  }
+  const nearDoorKey = snapshot.doorKeyPickups.find(
+    (pickup) => !pickup.collected && distance(pickup.position, snapshot.player.position) < 0.75,
+  );
+  if (nearDoorKey) {
+    return "Press E to pick up general key";
+  }
+  const nearBody = snapshot.guards.find(
+    (guard) =>
+      guard.bodyState &&
+      guard.bodyState !== "active" &&
+      !guard.bodyHiddenIn &&
+      distance(guard.position, snapshot.player.position) < 0.85,
+  );
+  if (nearBody) {
+    return "Press E to drag body";
+  }
+  const nearDoor = snapshot.doors.find((door) => distance(door.position, snapshot.player.position) < 0.85);
+  if (nearDoor) {
+    if (!nearDoor.unlocked) {
+      return nearDoor.keyId && snapshot.player.doorKeys.includes(nearDoor.keyId)
+        ? "Press E to unlock door"
+        : "General key required";
+    }
+    return nearDoor.open ? "Press E to close door" : "Press E to open door";
+  }
+  if (distance(prisonMap.exit.position, snapshot.player.position) < 0.9) {
+    return snapshot.objectives.hasKey ? "Press E to unlock exit" : "Find the master key";
+  }
+  if (snapshot.player.pebbles > 0) {
+    return "Hold left mouse to charge throw, release to throw";
+  }
+  return "WASD move | Shift sprint | E interact";
+}
+
+function bannerFor(snapshot: SimulationSnapshot): HudBanner {
+  if (snapshot.completed?.outcome === "escape") {
+    return { text: "Escaped", tone: "success" };
+  }
+  if (snapshot.completed?.outcome === "death") {
+    return { text: "Dead", tone: "danger" };
+  }
+  if (snapshot.completed?.outcome === "capture") {
+    return { text: "Run Ended", tone: "danger" };
+  }
+  const mostAlertGuard = snapshot.guards.reduce((best, guard) => (guard.suspicion > best.suspicion ? guard : best));
+  if (mostAlertGuard.state === "chase") {
+    return { text: "Lockdown", tone: "danger" };
+  }
+  if (mostAlertGuard.state === "search") {
+    return { text: "Searching", tone: "warn" };
+  }
+  if (mostAlertGuard.state === "investigate" || mostAlertGuard.suspicion > 0) {
+    return { text: "Suspicious", tone: "warn" };
+  }
+  return { text: "Stay quiet", tone: "neutral" };
+}
+
+function formatAlertLevel(level: string): string {
+  return level
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function alertTone(level: string): HudBanner["tone"] {
+  if (level === "alert" || level === "armed_response" || level === "lockdown_pressure") {
+    return "danger";
+  }
+  if (level === "suspicious") {
+    return "warn";
+  }
+  return "neutral";
+}
+
+export function createHudModel(snapshot: SimulationSnapshot, selectedSlot: HudSelectedSlot = "melee"): HudModel {
+  const health = snapshot.player.health ?? { entityId: "player", hp: 100, maxHp: 100, isDown: false };
+  const weaponState = snapshot.player.weapons;
+  const gunId = weaponState?.primaryGunId ?? weaponState?.sidearmId ?? null;
+  const gun = gunId ? weapons[gunId] : null;
+  const loadedAmmo = gun ? (weaponState?.ammoByWeapon[gun.id] ?? 0) : 0;
+  const reserveAmmo = gun ? (weaponState?.reserveAmmoByType[gun.ammoType] ?? 0) : 0;
+  const reloadLabel = weaponState?.reload
+    ? `Reloading ${Math.ceil(weaponState.reload.remainingMs / 1000)}s`
+    : "Ready";
+  const equippedGunIsReloading = Boolean(gun && weaponState?.reload?.weaponId === gun.id);
+  const maxSuspicion = Math.max(0, ...snapshot.guards.map((guard) => guard.suspicion));
+  const alert = snapshot.alert ?? { level: "calm", pressure: 0, armedResponseTriggered: false };
+  const hasGeneralKey = snapshot.player.doorKeys.includes("general_key");
+  const hasMasterKey = snapshot.objectives.hasKey;
+
+  return {
+    objective: snapshot.objectives.hasKey ? "Reach the next section door" : "Find the master key",
+    levelLabel: snapshot.level.name,
+    sectionLabel: snapshot.level.section,
+    keyLabel: snapshot.objectives.hasKey ? "secured" : "missing",
+    keyInventoryLabel: `General ${hasGeneralKey ? "yes" : "no"} | Master ${hasMasterKey ? "yes" : "no"}`,
+    hasGeneralKey,
+    hasMasterKey,
+    pebbleCount: snapshot.player.pebbles,
+    miscLabel: "Pebble",
+    miscCountLabel: String(snapshot.player.pebbles),
+    selectedSlot,
+    healthLabel: `${Math.ceil(health.hp)} / ${Math.ceil(health.maxHp)}`,
+    healthPercent: Math.round((health.hp / Math.max(1, health.maxHp)) * 100),
+    meleeLabel: weapons[weaponState?.meleeWeaponId ?? "fists"].label,
+    gunLabel: gun?.label ?? "No gun",
+    ammoLabel: gun ? (equippedGunIsReloading ? reloadLabel : `${loadedAmmo} / ${reserveAmmo}`) : "-",
+    reloadLabel,
+    healingItemsLabel: String(weaponState?.healingItems ?? 0),
+    alertLabel: formatAlertLevel(alert.level),
+    alertTone: alertTone(alert.level),
+    suspicionPercent: Math.round(maxSuspicion * 100),
+    prompt: interactionPrompt(snapshot),
+    banner: bannerFor(snapshot),
+  };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function escapePercent(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+export class Hud {
+  private readonly root: HTMLElement;
+
+  constructor(root: HTMLElement) {
+    this.root = root;
+    this.root.classList.add("hud");
+  }
+
+  update(snapshot: SimulationSnapshot, selectedSlot: HudSelectedSlot = "melee"): void {
+    const model = createHudModel(snapshot, selectedSlot);
+    const healthPercent = escapePercent(model.healthPercent);
+    const suspicionPercent = escapePercent(model.suspicionPercent);
+
+    this.root.innerHTML = `
+      <section class="hud__panel">
+        <div class="hud__eyebrow">Objective</div>
+        <div class="hud__objective">${escapeHtml(model.objective)}</div>
+        <div class="hud__row">
+          <span>Level</span>
+          <strong>${escapeHtml(model.levelLabel)}</strong>
+        </div>
+        <div class="hud__row">
+          <span>Key</span>
+          <strong>${escapeHtml(model.keyLabel)}</strong>
+        </div>
+        <div class="hud__row hud__row--keys">
+          <span>Keys</span>
+          <div class="hud__key-list" aria-label="${escapeHtml(model.keyInventoryLabel)}">
+            <span class="hud__key-chip hud__key-chip--general ${model.hasGeneralKey ? "hud__key-chip--owned" : ""}">General</span>
+            <span class="hud__key-chip hud__key-chip--master ${model.hasMasterKey ? "hud__key-chip--owned" : ""}">Master</span>
+          </div>
+        </div>
+        <div class="hud__row">
+          <span>Pebbles</span>
+          <strong>${model.pebbleCount}</strong>
+        </div>
+        <div class="hud__prompt">${escapeHtml(model.prompt)}</div>
+      </section>
+      <section class="hud__panel hud__panel--right">
+        <div class="hud__banner hud__banner--${model.banner.tone}">${escapeHtml(model.banner.text)}</div>
+        <div class="hud__row hud__row--compact">
+          <span>Health</span>
+          <strong>${escapeHtml(model.healthLabel)}</strong>
+        </div>
+        <div class="hud__meter hud__meter--health">
+          <div class="hud__meter-fill hud__meter-fill--health" style="width: ${healthPercent}%"></div>
+        </div>
+        <div class="hud__banner hud__banner--${model.alertTone} hud__banner--small">${escapeHtml(model.alertLabel)}</div>
+        <label class="hud__meter-label" for="suspicion-meter">Suspicion</label>
+        <div id="suspicion-meter" class="hud__meter">
+          <div class="hud__meter-fill" style="width: ${suspicionPercent}%"></div>
+        </div>
+      </section>
+      <section class="hud__equipment" aria-label="Equipment">
+        <div class="hud__slot hud__slot--active ${model.selectedSlot === "melee" ? "hud__slot--selected" : ""}">
+          <span class="hud__slot-key">1</span>
+          <span class="hud__slot-label">Melee</span>
+          <strong>${escapeHtml(model.meleeLabel)}</strong>
+        </div>
+        <div class="hud__slot hud__slot--active ${model.selectedSlot === "gun" ? "hud__slot--selected" : ""}">
+          <span class="hud__slot-key">2</span>
+          <span class="hud__slot-label">Gun</span>
+          <strong>${escapeHtml(model.gunLabel)}</strong>
+          <span class="hud__slot-meta">${escapeHtml(model.ammoLabel)}</span>
+        </div>
+        <div class="hud__slot hud__slot--active ${model.selectedSlot === "misc" ? "hud__slot--selected" : ""}">
+          <span class="hud__slot-key">3</span>
+          <span class="hud__slot-label">Misc</span>
+          <strong>${escapeHtml(model.miscLabel)}</strong>
+          <span class="hud__slot-meta">${escapeHtml(model.miscCountLabel)}</span>
+        </div>
+        <div class="hud__slot">
+          <span class="hud__slot-key">R</span>
+          <span class="hud__slot-label">Reload</span>
+          <strong>${escapeHtml(model.reloadLabel)}</strong>
+        </div>
+        <div class="hud__slot">
+          <span class="hud__slot-key">F</span>
+          <span class="hud__slot-label">Heal</span>
+          <strong>${escapeHtml(model.healingItemsLabel)}</strong>
+        </div>
+      </section>
+    `;
+  }
+
+  showMenu(onStart: () => void): void {
+    this.root.innerHTML = `
+      <section class="menu-card">
+        <p class="hud__eyebrow">Adaptive Prison Break</p>
+        <h1>Prison Wing Vertical Slice</h1>
+        <p>Slip through patrols, steal the key, and survive long enough to escape.</p>
+        <button class="primary-action" type="button">Begin Run</button>
+      </section>
+    `;
+    this.root.querySelector("button")?.addEventListener("click", onStart);
+  }
+
+  showBlockingMenu(message: string, onRetry: () => void): void {
+    this.root.innerHTML = `
+      <section class="menu-card">
+        <p class="hud__eyebrow">Service Required</p>
+        <h1>Connection Blocked</h1>
+        <p>${escapeHtml(message)}</p>
+        <button class="primary-action" type="button">Retry</button>
+      </section>
+    `;
+    this.root.querySelector("button")?.addEventListener("click", onRetry);
+  }
+
+  showLoading(message: string): void {
+    this.root.innerHTML = `
+      <section class="menu-card">
+        <p class="hud__eyebrow">Please Wait</p>
+        <h1>${escapeHtml(message)}</h1>
+        <p>The local service is preparing the adaptive run loop.</p>
+      </section>
+    `;
+  }
+
+  showPaused(): void {
+    this.root.innerHTML = `
+      <section class="menu-card">
+        <p class="hud__eyebrow">Game Paused</p>
+        <h1>Game Paused</h1>
+        <p>Press Esc again to resume.</p>
+      </section>
+    `;
+  }
+
+  showReportLoading(outcome: RunOutcome): void {
+    const outcomeLabel = outcome === "escape" ? "Escaped" : outcome === "death" ? "Death" : "Run Ended";
+    this.root.innerHTML = `
+      <section class="menu-card report-card">
+        <p class="hud__eyebrow">Run ${outcomeLabel}</p>
+        <h1>Generating Intelligence Report</h1>
+        <p>Submitting run events to SQLite and waiting for Codex to select a validated security response.</p>
+      </section>
+    `;
+  }
+
+  showReport(response: CompleteRunResponse, onBeginNextRun: () => void): void {
+    const habit = response.report.summary.mostUsedCorridor
+      ? `Most-used corridor: ${response.report.summary.mostUsedCorridor}`
+      : response.report.summary.favoriteHidingSpot
+        ? `Favorite hiding spot: ${response.report.summary.favoriteHidingSpot}`
+        : "No dominant habit detected yet";
+    const trend = `${Math.round(response.report.summary.successfulEscapes)} escape(s), ${Math.round(response.report.summary.detections)} detection event(s), sprint ratio ${Math.round(response.report.summary.sprintRatio * 100)}%`;
+    this.root.innerHTML = `
+      <section class="menu-card report-card">
+        <p class="hud__eyebrow">Intelligence Report</p>
+        <h1>${response.outcome === "escape" ? "Escape Logged" : response.outcome === "death" ? "Death Logged" : "Run Logged"}</h1>
+        <p>${escapeHtml(response.report.rationale)}</p>
+        <div class="report-card__section">
+          <strong>Learned habit</strong>
+          <span>${escapeHtml(habit)}</span>
+        </div>
+        <div class="report-card__section">
+          <strong>Security adaptation</strong>
+          <span>${escapeHtml(response.report.adaptation.action)} (${escapeHtml(response.report.adaptation.target)}) level ${response.report.adaptation.level}</span>
+        </div>
+        <div class="report-card__section">
+          <strong>Recent trend</strong>
+          <span>${escapeHtml(trend)}</span>
+        </div>
+        <button class="primary-action" type="button">Begin Next Run</button>
+      </section>
+    `;
+    this.root.querySelector("button")?.addEventListener("click", onBeginNextRun);
+  }
+
+  showReportError(error: BlockingError["error"], onRetry: () => void): void {
+    this.root.innerHTML = `
+      <section class="menu-card report-card">
+        <p class="hud__eyebrow">Report Blocked</p>
+        <h1>Retry Required</h1>
+        <p>${escapeHtml(error.message)}</p>
+        <div class="report-card__section">
+          <strong>Error code</strong>
+          <span>${escapeHtml(error.code)}</span>
+        </div>
+        <button class="primary-action" type="button">Retry</button>
+      </section>
+    `;
+    this.root.querySelector("button")?.addEventListener("click", onRetry);
+  }
+}

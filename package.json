@@ -1,0 +1,29 @@
+{
+  "name": "adaptive-prison-break",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:client": "vite --config client/vite.config.ts",
+    "dev:service": "tsx watch service/src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.base.json",
+    "build": "vite build --config client/vite.config.ts && tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "express": "^5.1.0",
+    "phaser": "^3.90.0",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.3",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  }
+}
