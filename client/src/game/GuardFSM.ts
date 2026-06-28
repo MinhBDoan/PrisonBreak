@@ -118,7 +118,27 @@ export class GuardFSM {
       chaseUntilMs: 0,
       distractionUntilMs: 0,
       lastSeenPlayerPosition: null,
+      combatLockedOnPlayer: false,
     }));
+
+    for (const guard of map.stationaryGuards) {
+      guards.push({
+        id: guard.id,
+        position: cloneVector(guard.position),
+        facing: cloneVector(guard.facing),
+        state: "patrol",
+        routeId: `stationary:${guard.id}`,
+        routeIndex: 0,
+        suspicion: 0,
+        captureProgress: 0,
+        inspectionTarget: null,
+        searchUntilMs: 0,
+        chaseUntilMs: 0,
+        distractionUntilMs: 0,
+        lastSeenPlayerPosition: null,
+        combatLockedOnPlayer: false,
+      });
+    }
 
     if (adaptations.reserveGuardActive) {
       guards.push({
@@ -135,6 +155,7 @@ export class GuardFSM {
         chaseUntilMs: 0,
         distractionUntilMs: 0,
         lastSeenPlayerPosition: null,
+        combatLockedOnPlayer: false,
       });
     }
 
@@ -170,9 +191,17 @@ export class GuardFSM {
   }
 
   updateAwareness(guard: GuardRuntime, canSeePlayer: boolean, playerPosition: Vector, nowMs: number): boolean {
-    if (canSeePlayer) {
+    if (guard.combatLockedOnPlayer) {
+      guard.state = "chase";
       guard.lastSeenPlayerPosition = cloneVector(playerPosition);
-      guard.chaseUntilMs = nowMs + lostSightChaseDurationMs;
+      guard.chaseUntilMs = Number.POSITIVE_INFINITY;
+      guard.suspicion = chaseThreshold;
+    }
+
+    if (canSeePlayer) {
+      guard.combatLockedOnPlayer = true;
+      guard.lastSeenPlayerPosition = cloneVector(playerPosition);
+      guard.chaseUntilMs = guard.combatLockedOnPlayer ? Number.POSITIVE_INFINITY : nowMs + lostSightChaseDurationMs;
       guard.suspicion = Math.min(chaseThreshold, guard.suspicion + suspicionRate);
       if (guard.suspicion >= chaseThreshold) {
         guard.state = "chase";
@@ -191,14 +220,14 @@ export class GuardFSM {
     }
 
     if (guard.state === "chase") {
-      if (!canSeePlayer && nowMs > guard.chaseUntilMs) {
+      if (!guard.combatLockedOnPlayer && !canSeePlayer && nowMs > guard.chaseUntilMs) {
         guard.state = "return";
         guard.captureProgress = Math.max(0, guard.captureProgress - 0.02);
         guard.lastSeenPlayerPosition = null;
         return false;
       }
 
-      const chaseTarget = canSeePlayer ? playerPosition : guard.lastSeenPlayerPosition ?? playerPosition;
+      const chaseTarget = guard.combatLockedOnPlayer || canSeePlayer ? playerPosition : guard.lastSeenPlayerPosition ?? playerPosition;
       const chaseMultiplier = nowMs <= guard.distractionUntilMs ? distractionSpeedMultiplier : chaseSpeedMultiplier;
       const moved = steerTowardAvoidingSolidObjects(this.map, guard.position, chaseTarget, guardSpeed * chaseMultiplier);
       guard.position = moved.position;

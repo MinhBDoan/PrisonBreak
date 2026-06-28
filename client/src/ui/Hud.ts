@@ -46,7 +46,7 @@ function interactionPrompt(snapshot: SimulationSnapshot): string {
   }
   if (snapshot.player.draggingBodyId) {
     const nearDumpSpot = prisonMap.hidingSpots.some((spot) => distance(spot.position, snapshot.player.position) < 0.9);
-    return nearDumpSpot ? "Press E to dump body" : "Drag body to a locker or shadow";
+    return nearDumpSpot ? "Press E to dump body" : "Press E to drop body";
   }
   const nearHiding = prisonMap.hidingSpots.find((spot) => distance(spot.position, snapshot.player.position) < 0.75);
   if (nearHiding) {

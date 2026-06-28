@@ -7,7 +7,14 @@ import { GuardFSM, type GuardRuntime } from "./GuardFSM";
 import { applyDamage, createHealthState } from "./HealthSystem";
 import { HidingSystem } from "./HidingSystem";
 import { levelById } from "./levels";
-import { collidesWithSolidObjects, corridorAt, isWall, overlapsRectangle, prisonMap } from "./map";
+import {
+  collidesWithSolidObjects,
+  corridorAt,
+  isWall,
+  lockerCollisionObjects,
+  overlapsRectangle,
+  prisonMap,
+} from "./map";
 import { NoiseSystem, type NoiseEvent } from "./NoiseSystem";
 import { ObjectiveSystem } from "./ObjectiveSystem";
 import { RunEventCollector } from "./RunEventCollector";
@@ -17,6 +24,7 @@ import type {
   AlertState,
   BodySystemState,
   CombatResult,
+  Door,
   DoorKeyId,
   DoorKeyPickup,
   GuardOverride,
@@ -35,7 +43,7 @@ import { weapons } from "./weapons";
 
 const stepMs = 100;
 const walkSpeed = 0.018333;
-const sprintSpeed = 0.033333;
+const sprintSpeed = 0.028333;
 const inspectionIntervalMs = 1800;
 const noiseSuspicion = {
   walk: 0.08,
@@ -47,6 +55,7 @@ const noiseSuspicion = {
 const noiseChaseDurationMs = 3000;
 const wallCollisionRadius = 0.35;
 const playerObjectCollisionRadius = 0.28;
+const playerGuardCollisionRadius = 0.56;
 const pebblePickupRadius = 0.7;
 const weaponPickupRadius = 0.75;
 const healingPickupRadius = 0.75;
@@ -87,21 +96,24 @@ function normalize(vector: Vector): Vector {
   return { x: vector.x / length, y: vector.y / length };
 }
 
-function wallBetween(map: PrisonMap, from: Vector, to: Vector): boolean {
+function pebbleLandingEndpoint(map: PrisonMap, from: Vector, to: Vector): Vector {
   const distance = Math.hypot(to.x - from.x, to.y - from.y);
-  const steps = Math.max(1, Math.ceil(distance / 0.1));
+  const steps = Math.max(1, Math.ceil(distance / projectileTraceStep));
+  let endpoint = { ...from };
+
   for (let step = 1; step <= steps; step += 1) {
     const progress = step / steps;
-    if (
-      isWall(map, {
-        x: from.x + (to.x - from.x) * progress,
-        y: from.y + (to.y - from.y) * progress,
-      })
-    ) {
-      return true;
+    const position = {
+      x: from.x + (to.x - from.x) * progress,
+      y: from.y + (to.y - from.y) * progress,
+    };
+    if (isWall(map, position) || collidesWithSolidObjects(map, position, projectileTraceCollisionRadius)) {
+      return roundVector(endpoint);
     }
+    endpoint = position;
   }
-  return false;
+
+  return roundVector(endpoint);
 }
 
 function projectileEndpoint(
@@ -179,6 +191,7 @@ function applyGuardOverrides(guards: GuardRuntime[], overrides: GuardOverride[])
       chaseUntilMs: 0,
       distractionUntilMs: 0,
       lastSeenPlayerPosition: null,
+      combatLockedOnPlayer: false,
     });
   }
   return overrides.length > 0 ? overridden.filter((guard) => overrides.some((override) => override.id === guard.id)) : overridden;
@@ -282,6 +295,7 @@ export class GameSimulation {
   private readonly collectedWeaponPickups = new Set<string>();
   private readonly collectedHealingPickups = new Set<string>();
   private readonly openDoors = new Set<string>();
+  private readonly doorSwingDirections = new Map<string, 1 | -1>();
   private readonly unlockedDoors = new Set<string>();
   private readonly droppedDoorKeys = new Map<string, DoorKeyPickup>();
   private readonly collectedDoorKeyPickups = new Set<string>();
@@ -549,6 +563,7 @@ export class GameSimulation {
         position: { ...door.position },
         open: this.openDoors.has(door.id),
         unlocked: this.unlockedDoors.has(door.id),
+        swingDirection: this.doorSwingDirections.get(door.id) ?? 1,
       })),
       doorKeyPickups: [...this.droppedDoorKeys.values()].map((pickup) => ({
         ...pickup,
@@ -623,6 +638,13 @@ export class GameSimulation {
           this.closedDoorBlocks(position, projectileTraceCollisionRadius),
         ),
       );
+      return;
+    }
+    if (weapon.kind !== "gun" && this.canUseWeapon(weaponId)) {
+      this.recordMissedMeleeAttack(weaponId, {
+        x: this.player.position.x + (aim.x / aimLength) * Math.min(aimLength, weapon.range),
+        y: this.player.position.y + (aim.y / aimLength) * Math.min(aimLength, weapon.range),
+      });
     }
   }
 
@@ -680,6 +702,20 @@ export class GameSimulation {
     });
     this.propagateNoise(noise);
     this.setAlertState(registerNoise(this.alertState, weapons[weaponId].noise));
+  }
+
+  private recordMissedMeleeAttack(weaponId: WeaponId, targetPosition: Vector): void {
+    this.events.record(this.timeMs, {
+      type: "attack",
+      position: { ...this.player.position },
+      payload: {
+        attackerId: "player",
+        targetId: null,
+        weaponId,
+        hit: false,
+        targetPosition: { ...targetPosition },
+      },
+    });
   }
 
   private reloadEquippedGun(): void {
@@ -843,12 +879,11 @@ export class GameSimulation {
   }
 
   private nextPlayerPosition(direction: Vector, speed: number): Vector | null {
-    const candidates = [
-      {
-        x: this.player.position.x + direction.x * speed,
-        y: this.player.position.y + direction.y * speed,
-      },
-    ];
+    const direct = {
+      x: this.player.position.x + direction.x * speed,
+      y: this.player.position.y + direction.y * speed,
+    };
+    const candidates = [direct];
 
     if (direction.x !== 0 && direction.y !== 0) {
       const horizontal = {
@@ -863,7 +898,88 @@ export class GameSimulation {
       candidates.push(Math.abs(direction.x) >= Math.abs(direction.y) ? vertical : horizontal);
     }
 
+    const nudgeObject = this.blockingSolidObject(direct) ?? this.approachingCornerNudgeObject(direct, direction);
+    if (nudgeObject && (direction.x === 0 || direction.y === 0)) {
+      candidates.unshift(...this.playerNudgeCandidates(direction, speed, nudgeObject));
+    }
+
     return candidates.find((candidate) => !this.collidesWithObstacle(candidate)) ?? null;
+  }
+
+  private playerNudgeCandidates(
+    direction: Vector,
+    speed: number,
+    obstacle: { position: Vector; width: number; height: number },
+  ): Vector[] {
+    if (direction.x !== 0) {
+      if (Math.abs(this.player.position.y - obstacle.position.y) <= obstacle.height / 2) {
+        return [];
+      }
+      const tangent = Math.sign(this.player.position.y - obstacle.position.y) || 1;
+      return [
+        { x: this.player.position.x + direction.x * speed, y: this.player.position.y + tangent * speed * 0.45 },
+        { x: this.player.position.x + direction.x * speed * 0.55, y: this.player.position.y + tangent * speed },
+        { x: this.player.position.x, y: this.player.position.y + tangent * speed },
+        { x: this.player.position.x + direction.x * speed, y: this.player.position.y - tangent * speed },
+        { x: this.player.position.x, y: this.player.position.y - tangent * speed },
+      ];
+    }
+
+    if (Math.abs(this.player.position.x - obstacle.position.x) <= obstacle.width / 2) {
+      return [];
+    }
+    const tangent = Math.sign(this.player.position.x - obstacle.position.x) || 1;
+    return [
+      { x: this.player.position.x + tangent * speed * 0.45, y: this.player.position.y + direction.y * speed },
+      { x: this.player.position.x + tangent * speed, y: this.player.position.y + direction.y * speed * 0.55 },
+      { x: this.player.position.x + tangent * speed, y: this.player.position.y },
+      { x: this.player.position.x - tangent * speed, y: this.player.position.y + direction.y * speed },
+      { x: this.player.position.x - tangent * speed, y: this.player.position.y },
+    ];
+  }
+
+  private blockingSolidObject(position: Vector): { position: Vector; width: number; height: number } | null {
+    return (
+      [...this.map.coverObjects, ...lockerCollisionObjects(this.map)].find((obstacle) =>
+        overlapsRectangle(position, playerObjectCollisionRadius, obstacle),
+      ) ?? null
+    );
+  }
+
+  private approachingCornerNudgeObject(
+    position: Vector,
+    direction: Vector,
+  ): { position: Vector; width: number; height: number } | null {
+    if (direction.x !== 0 && direction.y !== 0) {
+      return null;
+    }
+
+    const lookAhead = 0.18;
+    return (
+      [...this.map.coverObjects, ...lockerCollisionObjects(this.map)].find((obstacle) => {
+        const halfWidth = obstacle.width / 2;
+        const halfHeight = obstacle.height / 2;
+        if (direction.x !== 0) {
+          const verticalCornerBand =
+            Math.abs(this.player.position.y - obstacle.position.y) > halfHeight &&
+            Math.abs(this.player.position.y - obstacle.position.y) <= halfHeight + playerObjectCollisionRadius;
+          const distanceToObstacle =
+            direction.x > 0
+              ? obstacle.position.x - halfWidth - (position.x + playerObjectCollisionRadius)
+              : position.x - playerObjectCollisionRadius - (obstacle.position.x + halfWidth);
+          return verticalCornerBand && distanceToObstacle >= 0 && distanceToObstacle <= lookAhead;
+        }
+
+        const horizontalCornerBand =
+          Math.abs(this.player.position.x - obstacle.position.x) > halfWidth &&
+          Math.abs(this.player.position.x - obstacle.position.x) <= halfWidth + playerObjectCollisionRadius;
+        const distanceToObstacle =
+          direction.y > 0
+            ? obstacle.position.y - halfHeight - (position.y + playerObjectCollisionRadius)
+            : position.y - playerObjectCollisionRadius - (obstacle.position.y + halfHeight);
+        return horizontalCornerBand && distanceToObstacle >= 0 && distanceToObstacle <= lookAhead;
+      }) ?? null
+    );
   }
 
   private propagateNoise(noise: NoiseEvent): void {
@@ -906,8 +1022,18 @@ export class GameSimulation {
 
     return (
       collidesWithSolidObjects(this.map, position, playerObjectCollisionRadius) ||
-      this.closedDoorBlocks(position, playerObjectCollisionRadius)
+      this.closedDoorBlocks(position, playerObjectCollisionRadius) ||
+      this.collidesWithActiveGuard(position)
     );
+  }
+
+  private collidesWithActiveGuard(position: Vector): boolean {
+    return this.guards.some((guard) => {
+      if (this.bodyState.bodies[guard.id]) {
+        return false;
+      }
+      return Math.hypot(guard.position.x - position.x, guard.position.y - position.y) < playerGuardCollisionRadius;
+    });
   }
 
   private closedDoorBlocks(position: Vector, radius: number): boolean {
@@ -972,6 +1098,7 @@ export class GameSimulation {
     }
 
     this.openDoors.add(door.id);
+    this.doorSwingDirections.set(door.id, this.swingDirectionAwayFrom(door, guard.position));
     this.events.record(this.timeMs, {
       type: "door_opened",
       position: { ...door.position },
@@ -1005,9 +1132,9 @@ export class GameSimulation {
           Math.hypot(candidate.position.x - this.player.position.x, candidate.position.y - this.player.position.y) <=
           bodyDumpRadius,
       );
-      if (spot) {
-        const body = this.bodyState.bodies[this.player.draggingBodyId];
-        if (body) {
+      const body = this.bodyState.bodies[this.player.draggingBodyId];
+      if (body) {
+        if (spot) {
           this.bodyState = addBody(this.bodyState, {
             ...body,
             position: { ...spot.position },
@@ -1017,6 +1144,17 @@ export class GameSimulation {
             type: "body_dumped",
             position: { ...spot.position },
             payload: { guardId: this.player.draggingBodyId, hidingSpotId: spot.id },
+          });
+        } else {
+          this.bodyState = addBody(this.bodyState, {
+            ...body,
+            position: { ...this.player.position },
+            hiddenIn: undefined,
+          });
+          this.events.record(this.timeMs, {
+            type: "body_dumped",
+            position: { ...this.player.position },
+            payload: { guardId: this.player.draggingBodyId },
           });
         }
         this.player.draggingBodyId = null;
@@ -1064,6 +1202,7 @@ export class GameSimulation {
         if (door.keyId && this.carriedDoorKeys.has(door.keyId)) {
           this.unlockedDoors.add(door.id);
           this.openDoors.add(door.id);
+          this.doorSwingDirections.set(door.id, this.swingDirectionAwayFrom(door, this.player.position));
           this.events.record(this.timeMs, {
             type: "door_unlocked",
             position: { ...door.position },
@@ -1090,6 +1229,7 @@ export class GameSimulation {
         });
       } else {
         this.openDoors.add(door.id);
+        this.doorSwingDirections.set(door.id, this.swingDirectionAwayFrom(door, this.player.position));
         this.events.record(this.timeMs, {
           type: "door_opened",
           position: { ...door.position },
@@ -1192,6 +1332,13 @@ export class GameSimulation {
     }
   }
 
+  private swingDirectionAwayFrom(door: Door, openerPosition: Vector): 1 | -1 {
+    if (door.width >= door.height) {
+      return openerPosition.y > door.position.y ? -1 : 1;
+    }
+    return openerPosition.x > door.position.x ? 1 : -1;
+  }
+
   private throwPebble(target: Vector): void {
     if (this.player.pebbles <= 0 || this.player.hiddenIn) {
       return;
@@ -1207,13 +1354,11 @@ export class GameSimulation {
 
     const distance = Math.hypot(target.x - this.player.position.x, target.y - this.player.position.y);
     const landingDistance = Math.min(distance, pebbleThrowRange);
-    const landing = {
+    const targetLanding = {
       x: this.player.position.x + direction.x * landingDistance,
       y: this.player.position.y + direction.y * landingDistance,
     };
-    if (wallBetween(this.map, this.player.position, landing)) {
-      return;
-    }
+    const landing = pebbleLandingEndpoint(this.map, this.player.position, targetLanding);
 
     this.player.pebbles -= 1;
     this.events.record(this.timeMs, {
@@ -1301,6 +1446,11 @@ export class GameSimulation {
     }
 
     this.guardContactCooldowns.set(guard.id, this.timeMs + guardContactCooldownMs);
+    guard.combatLockedOnPlayer = true;
+    guard.state = "chase";
+    guard.suspicion = 1;
+    guard.chaseUntilMs = Number.POSITIVE_INFINITY;
+    guard.lastSeenPlayerPosition = { ...this.player.position };
     this.events.record(this.timeMs, {
       type: "guard_attack",
       position: { ...guard.position },

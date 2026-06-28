@@ -1,6 +1,16 @@
 import type Phaser from "phaser";
 import { prisonMap } from "../game/map";
-import type { Door, DoorKeyPickup, GuardStateSnapshot, HealingPickup, HidingSpot, SimulationSnapshot, Vector, WeaponPickup } from "../game/types";
+import type {
+  Door,
+  DoorKeyPickup,
+  GuardStateSnapshot,
+  HealingPickup,
+  HidingSpot,
+  SetDressingKind,
+  SimulationSnapshot,
+  Vector,
+  WeaponPickup,
+} from "../game/types";
 
 export const renderScale = 64;
 const noiseRippleCooldownMs = 500;
@@ -23,6 +33,16 @@ export type EntityDescriptor = {
   y: number;
 };
 
+export type CharacterVisualDescriptor = {
+  artStyle: "pixel_tactics";
+  variant: "readable_hybrid";
+  species: "raccoon" | "fox";
+  role: "prisoner" | "guard";
+  uniformColor: number;
+  accentColor: number;
+  outlineColor: number;
+};
+
 export type KeyVisualDescriptor = {
   color: number;
   strokeColor: number;
@@ -36,14 +56,16 @@ export type GuardDescriptor = EntityDescriptor & {
   hiddenBody: boolean;
   health: GuardStateSnapshot["health"];
   suspicion: number;
+  visual: CharacterVisualDescriptor;
   visionCone: VisionConeDescriptor | null;
 };
 
 export type RenderDescriptors = {
-  player: EntityDescriptor & { hidden: boolean };
+  player: EntityDescriptor & { hidden: boolean; visual: CharacterVisualDescriptor };
   guards: GuardDescriptor[];
   hidingSpots: Array<EntityDescriptor & { type: HidingSpot["type"]; bodyOccupied: boolean }>;
   coverObjects: Array<EntityDescriptor & { width: number; height: number }>;
+  setDressingObjects: Array<{ id: string; kind: SetDressingKind; x: number; y: number; width: number; height: number }>;
   pebbles: Array<EntityDescriptor & { collected: boolean }>;
   weaponPickups: Array<EntityDescriptor & { collected: boolean; weaponId: WeaponPickup["weaponId"] }>;
   healingPickups: Array<EntityDescriptor & { collected: boolean; amount: HealingPickup["amount"] }>;
@@ -58,6 +80,7 @@ export type RenderDescriptors = {
       originX: number;
       originY: number;
       visualRotation: number;
+      swingDirection: 1 | -1;
     }
   >;
   doorKeyPickups: Array<EntityDescriptor & { collected: boolean; keyId: DoorKeyPickup["keyId"] } & KeyVisualDescriptor>;
@@ -72,11 +95,12 @@ type RenderObjects = {
   floors: Phaser.GameObjects.Rectangle[];
   walls: Phaser.GameObjects.Rectangle[];
   lights: Phaser.GameObjects.Arc[];
-  player?: Phaser.GameObjects.Arc;
+  player?: Phaser.GameObjects.Container;
   guards: Map<string, Phaser.GameObjects.Container>;
   guardCones: Map<string, Phaser.GameObjects.Graphics>;
   hidingSpots: Map<string, Phaser.GameObjects.Rectangle>;
   coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
+  setDressingObjects: Map<string, Phaser.GameObjects.Rectangle>;
   pebbles: Map<string, Phaser.GameObjects.Arc>;
   weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
   healingPickups: Map<string, Phaser.GameObjects.Rectangle>;
@@ -165,6 +189,192 @@ function guardCone(guard: GuardStateSnapshot): VisionConeDescriptor | null {
   };
 }
 
+function setDressingFill(kind: SetDressingKind): number {
+  if (kind === "bars") {
+    return 0x9aa7b4;
+  }
+  if (kind === "cot") {
+    return 0x475766;
+  }
+  if (kind === "bench") {
+    return 0x5f4938;
+  }
+  if (kind === "toilet") {
+    return 0xc8d3dc;
+  }
+  if (kind === "prisoner") {
+    return 0x6f8799;
+  }
+  if (kind === "desk") {
+    return 0x4d3f34;
+  }
+  if (kind === "monitor") {
+    return 0x6bd3ff;
+  }
+  if (kind === "weapon_rack") {
+    return 0x8b929a;
+  }
+  return 0xe6d7a8;
+}
+
+function setDressingStroke(kind: SetDressingKind): number {
+  if (kind === "bars") {
+    return 0xd5dde5;
+  }
+  if (kind === "cot") {
+    return 0x7f93a8;
+  }
+  if (kind === "bench") {
+    return 0xaa7a52;
+  }
+  if (kind === "toilet") {
+    return 0xf0f6fa;
+  }
+  if (kind === "prisoner") {
+    return 0xb6c6d2;
+  }
+  if (kind === "desk") {
+    return 0x9b7459;
+  }
+  if (kind === "monitor") {
+    return 0xd7f7ff;
+  }
+  if (kind === "weapon_rack") {
+    return 0xffd166;
+  }
+  return 0xffefb0;
+}
+
+function setDressingAlpha(kind: SetDressingKind): number {
+  if (kind === "monitor") {
+    return 0.72;
+  }
+  return kind === "floor_marking" ? 0.35 : 0.86;
+}
+
+function playerVisual(): CharacterVisualDescriptor {
+  return {
+    artStyle: "pixel_tactics",
+    variant: "readable_hybrid",
+    species: "raccoon",
+    role: "prisoner",
+    uniformColor: 0x3d6fb7,
+    accentColor: 0xd9e6ef,
+    outlineColor: 0x0b1118,
+  };
+}
+
+function guardVisual(): CharacterVisualDescriptor {
+  return {
+    artStyle: "pixel_tactics",
+    variant: "readable_hybrid",
+    species: "fox",
+    role: "guard",
+    uniformColor: 0xe28a3f,
+    accentColor: 0x243040,
+    outlineColor: 0x111820,
+  };
+}
+
+function addPixelRect(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: number,
+  alpha = 1,
+): Phaser.GameObjects.Rectangle {
+  return scene.add.rectangle(x, y, width, height, color, alpha).setOrigin(0.5);
+}
+
+function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
+  const shadow = scene.add.ellipse(0, 17, 30, 10, 0x081018, 0.24);
+  const tail = addPixelRect(scene, -14, 6, 7, 18, 0x6f7d8d).setRotation(-0.3);
+  tail.setStrokeStyle(2, visual.outlineColor, 0.9);
+  const legLeft = addPixelRect(scene, -5, 21, 6, 10, 0x172231);
+  const legRight = addPixelRect(scene, 5, 21, 6, 10, 0x172231);
+  const armLeft = addPixelRect(scene, -13, 5, 5, 18, 0x8d9bab);
+  const armRight = addPixelRect(scene, 13, 5, 5, 18, 0x8d9bab);
+  const body = addPixelRect(scene, 0, 5, 21, 26, visual.uniformColor);
+  body.setStrokeStyle(2, visual.outlineColor, 0.96);
+  const stripeA = addPixelRect(scene, 0, -1, 17, 3, visual.accentColor, 0.95);
+  const stripeB = addPixelRect(scene, 0, 8, 17, 3, visual.accentColor, 0.95);
+  const head = addPixelRect(scene, 0, -15, 20, 17, 0x8d9bab);
+  head.setStrokeStyle(2, visual.outlineColor, 0.96);
+  const earLeft = addPixelRect(scene, -7, -26, 6, 7, 0x8d9bab);
+  const earRight = addPixelRect(scene, 7, -26, 6, 7, 0x8d9bab);
+  const mask = addPixelRect(scene, 0, -17, 18, 5, 0x202a36);
+  const snout = addPixelRect(scene, 0, -11, 8, 4, 0xb5c1ca);
+  const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0xf8fbff);
+  const eyeRight = addPixelRect(scene, 4, -17, 2, 2, 0xf8fbff);
+
+  return scene.add.container(0, 0, [
+    shadow,
+    tail,
+    legLeft,
+    legRight,
+    armLeft,
+    armRight,
+    body,
+    stripeA,
+    stripeB,
+    head,
+    earLeft,
+    earRight,
+    mask,
+    snout,
+    eyeLeft,
+    eyeRight,
+  ]);
+}
+
+function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
+  const shadow = scene.add.ellipse(0, 18, 32, 11, 0x081018, 0.28);
+  const tail = addPixelRect(scene, 15, 7, 7, 20, 0xc36a38).setRotation(0.32);
+  tail.setStrokeStyle(2, visual.outlineColor, 0.9);
+  const legLeft = addPixelRect(scene, -6, 23, 7, 10, 0x1c2633);
+  const legRight = addPixelRect(scene, 6, 23, 7, 10, 0x1c2633);
+  const armLeft = addPixelRect(scene, -15, 6, 6, 19, 0xd8894d);
+  const armRight = addPixelRect(scene, 15, 6, 6, 19, 0xd8894d);
+  const baton = addPixelRect(scene, 20, 8, 4, 20, 0xc7d1db).setRotation(-0.22);
+  const body = addPixelRect(scene, 0, 6, 24, 28, visual.uniformColor);
+  body.setStrokeStyle(2, visual.outlineColor, 0.96);
+  const shirt = addPixelRect(scene, 0, 0, 16, 8, 0xf0b15f, 1);
+  const belt = addPixelRect(scene, 0, 11, 23, 4, visual.accentColor);
+  const badge = addPixelRect(scene, 7, 1, 4, 5, 0xffd166);
+  const head = addPixelRect(scene, 0, -16, 21, 18, 0xd8894d);
+  head.setStrokeStyle(2, visual.outlineColor, 0.96);
+  const earLeft = addPixelRect(scene, -8, -27, 6, 10, 0xd8894d);
+  const earRight = addPixelRect(scene, 8, -27, 6, 10, 0xd8894d);
+  const muzzle = addPixelRect(scene, 0, -11, 10, 5, 0xf3b37b);
+  const cap = addPixelRect(scene, 0, -26, 21, 5, visual.accentColor);
+  cap.setStrokeStyle(2, visual.outlineColor, 0.9);
+  const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0x101820);
+  const eyeRight = addPixelRect(scene, 4, -17, 2, 2, 0x101820);
+
+  return scene.add.container(0, 0, [
+    shadow,
+    tail,
+    legLeft,
+    legRight,
+    armLeft,
+    armRight,
+    baton,
+    body,
+    shirt,
+    belt,
+    badge,
+    head,
+    earLeft,
+    earRight,
+    muzzle,
+    cap,
+    eyeLeft,
+    eyeRight,
+  ]);
+}
+
 export class GameRenderer {
   private objects: RenderObjects | null = null;
   private lastNoiseRippleAtMs = Number.NEGATIVE_INFINITY;
@@ -177,6 +387,7 @@ export class GameRenderer {
         x: world(snapshot.player.position.x),
         y: world(snapshot.player.position.y),
         hidden: snapshot.player.hiddenIn !== null,
+        visual: playerVisual(),
       },
       guards: snapshot.guards.map((guard) => ({
         id: guard.id,
@@ -189,6 +400,7 @@ export class GameRenderer {
         hiddenBody: Boolean(guard.bodyHiddenIn),
         health: guard.health ? { ...guard.health } : undefined,
         suspicion: guard.suspicion,
+        visual: guardVisual(),
         visionCone: guardCone(guard),
       })),
       hidingSpots: prisonMap.hidingSpots.map((spot) => ({
@@ -206,6 +418,14 @@ export class GameRenderer {
         y: world(cover.position.y),
         width: world(cover.width),
         height: world(cover.height),
+      })),
+      setDressingObjects: prisonMap.setDressingObjects.map((object) => ({
+        id: object.id,
+        kind: object.kind,
+        x: world(object.position.x),
+        y: world(object.position.y),
+        width: world(object.width),
+        height: world(object.height),
       })),
       pebbles: snapshot.pebbles.map((pebble) => ({
         id: pebble.id,
@@ -243,7 +463,8 @@ export class GameRenderer {
         hingeY: world(door.position.y),
         originX: 0,
         originY: 0.5,
-        visualRotation: door.open ? Math.PI / 2 : 0,
+        visualRotation: door.open ? (Math.PI / 2) * door.swingDirection : 0,
+        swingDirection: door.swingDirection,
       })),
       doorKeyPickups: snapshot.doorKeyPickups.map((pickup) => ({
         id: pickup.id,
@@ -322,6 +543,7 @@ export class GameRenderer {
       guardCones: new Map(),
       hidingSpots: new Map(),
       coverObjects: new Map(),
+      setDressingObjects: new Map(),
       pebbles: new Map(),
       weaponPickups: new Map(),
       healingPickups: new Map(),
@@ -344,8 +566,8 @@ export class GameRenderer {
     const descriptors = this.describe(snapshot);
 
     if (!objects.player) {
-      objects.player = scene.add.circle(descriptors.player.x, descriptors.player.y, 18, 0x8bd3ff);
-      objects.player.setStrokeStyle(3, 0xd7f4ff, 0.9);
+      objects.player = createPlayerSprite(scene, descriptors.player.visual);
+      objects.player.setDepth(18);
     }
     objects.player.setPosition(descriptors.player.x, descriptors.player.y);
     objects.player.setAlpha(descriptors.player.hidden ? 0.42 : 1);
@@ -374,6 +596,18 @@ export class GameRenderer {
       existing.setFillStyle(0x6b5845, 0.95);
       existing.setStrokeStyle(2, 0xb28b63, 0.75);
       objects.coverObjects.set(cover.id, existing);
+    }
+
+    for (const object of descriptors.setDressingObjects) {
+      const existing =
+        objects.setDressingObjects.get(object.id) ??
+        scene.add.rectangle(object.x, object.y, object.width, object.height, setDressingFill(object.kind), setDressingAlpha(object.kind));
+      existing.setPosition(object.x, object.y);
+      existing.setSize(object.width, object.height);
+      existing.setFillStyle(setDressingFill(object.kind), setDressingAlpha(object.kind));
+      existing.setStrokeStyle(2, setDressingStroke(object.kind), 0.7);
+      existing.setDepth(2);
+      objects.setDressingObjects.set(object.id, existing);
     }
 
     for (const pebble of descriptors.pebbles) {
@@ -477,10 +711,8 @@ export class GameRenderer {
       liveGuardIds.add(guard.id);
       let container = objects.guards.get(guard.id);
       if (!container) {
-        const body = scene.add.rectangle(0, 0, 32, 38, 0xf08a4b);
-        body.setStrokeStyle(2, 0xffcf99, 0.85);
-        const head = scene.add.circle(0, -23, 11, 0xffc78f);
-        container = scene.add.container(guard.x, guard.y, [body, head]);
+        container = createGuardSprite(scene, guard.visual);
+        container.setDepth(18);
         objects.guards.set(guard.id, container);
       }
       container.setPosition(guard.x, guard.y);

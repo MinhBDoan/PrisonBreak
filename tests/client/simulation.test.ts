@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prisonMap } from "../../client/src/game/map";
+import { prisonMap, tileAt } from "../../client/src/game/map";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
 import type { SimulationInput } from "../../client/src/game/types";
 import type { NextRunConfig } from "../../shared/contracts";
@@ -68,6 +68,197 @@ describe("GameSimulation", () => {
     expect(prisonMap.doors.some((door) => door.id === "security_room_door" && door.locked)).toBe(true);
   });
 
+  it("adds cell block dressing so the start reads like a prison wing", () => {
+    expect(prisonMap.setDressingObjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "starter_cell_cot", kind: "cot" }),
+      expect.objectContaining({ id: "starter_cell_toilet", kind: "toilet" }),
+      expect.objectContaining({ id: "prisoner_cell_a_cot", kind: "cot" }),
+      expect.objectContaining({ id: "prisoner_cell_a_toilet", kind: "toilet" }),
+      expect.objectContaining({ id: "prisoner_cell_a_prisoner", kind: "prisoner" }),
+      expect.objectContaining({ id: "prisoner_cell_b_cot", kind: "cot" }),
+      expect.objectContaining({ id: "prisoner_cell_b_toilet", kind: "toilet" }),
+      expect.objectContaining({ id: "prisoner_cell_b_prisoner", kind: "prisoner" }),
+    ]));
+    expect(prisonMap.setDressingObjects.some((object) => object.id === "cell_block_floor_marking")).toBe(false);
+    expect(prisonMap.coverObjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "cell_row_back_wall" }),
+      expect.objectContaining({ id: "starter_cell_left_wall" }),
+      expect.objectContaining({ id: "starter_prisoner_shared_wall" }),
+      expect.objectContaining({ id: "prisoner_cells_shared_wall" }),
+      expect.objectContaining({ id: "prisoner_cell_a_front_wall" }),
+      expect.objectContaining({ id: "prisoner_cell_b_front_wall" }),
+    ]));
+    expect(prisonMap.doors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "starter_cell_door", locked: false }),
+    ]));
+    expect(prisonMap.hidingSpots).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "open_cell_shadow", type: "shadow" }),
+    ]));
+  });
+
+  it("collides with shared cell walls instead of letting players ghost into neighboring cells", () => {
+    const simulation = new GameSimulation();
+    simulation.setPlayerPosition({ x: 3.6, y: 2.5 });
+
+    stepMany(simulation, 80, { ...noInput, direction: { x: 1, y: 0 } });
+
+    expect(simulation.getSnapshot().player.position.x).toBeLessThan(4.4);
+  });
+
+  it("keeps NPC prisoner cells closed while the starter cell opens through its unlocked door", () => {
+    const simulation = new GameSimulation();
+
+    simulation.setPlayerPosition({ x: 5.65, y: 3.55 });
+    stepMany(simulation, 80, { ...noInput, direction: { x: 0, y: 1 } });
+    expect(simulation.getSnapshot().player.position.y).toBeLessThan(3.8);
+
+    simulation.setPlayerPosition({ x: 2.55, y: 3.45 });
+    simulation.step({ ...noInput, interact: true });
+    stepMany(simulation, 80, { ...noInput, direction: { x: 0, y: 1 } });
+
+    const snapshot = simulation.getSnapshot();
+    expect(snapshot.doors.find((door) => door.id === "starter_cell_door")?.open).toBe(true);
+    expect(snapshot.player.position.y).toBeGreaterThan(4.2);
+  });
+
+  it("turns the central service door into a storage room with optional supplies", () => {
+    expect(prisonMap.corridors).toHaveProperty("storage_room");
+    expect(prisonMap.coverObjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "storage_room_west_wall" }),
+      expect.objectContaining({ id: "storage_room_east_wall" }),
+      expect.objectContaining({ id: "storage_room_south_wall" }),
+      expect.objectContaining({ id: "storage_room_crate" }),
+    ]));
+    expect(prisonMap.pebbles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "pebble_storage" }),
+    ]));
+    expect(prisonMap.healingPickups).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "bandages_storage", amount: 1 }),
+    ]));
+  });
+
+  it("makes the security room read as a guarded control point", () => {
+    expect(prisonMap.setDressingObjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "security_desk", kind: "desk" }),
+      expect.objectContaining({ id: "security_monitor_bank", kind: "monitor" }),
+      expect.objectContaining({ id: "security_weapon_rack", kind: "weapon_rack" }),
+    ]));
+  });
+
+  it("adds a readable central route choice with cover on one path and a posted guard on the other", () => {
+    expect(prisonMap.coverObjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "central_low_cover" }),
+      expect.objectContaining({ id: "east_route_barrier" }),
+    ]));
+    expect(prisonMap.stationaryGuards).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "guard-3",
+        position: { x: 18.5, y: 5.5 },
+        facing: { x: -1, y: 0 },
+      }),
+    ]));
+  });
+
+  it("keeps posted guards stationary until they react to the player", () => {
+    const simulation = new GameSimulation();
+    const postedStart = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-3");
+
+    stepMany(simulation, 60);
+
+    const postedEnd = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-3");
+    expect(postedStart).toBeDefined();
+    expect(postedEnd?.position).toEqual(postedStart?.position);
+    expect(postedEnd?.state).toBe("patrol");
+  });
+
+  it("keeps the storage room beside the center tile wall instead of overlapping it", () => {
+    const storageWalls = prisonMap.coverObjects.filter((object) => object.id.startsWith("storage_room_"));
+    const samplePoints = storageWalls.flatMap((wall) => [
+      { x: wall.position.x - wall.width / 2 + 0.02, y: wall.position.y - wall.height / 2 + 0.02 },
+      { x: wall.position.x + wall.width / 2 - 0.02, y: wall.position.y - wall.height / 2 + 0.02 },
+      { x: wall.position.x - wall.width / 2 + 0.02, y: wall.position.y + wall.height / 2 - 0.02 },
+      { x: wall.position.x + wall.width / 2 - 0.02, y: wall.position.y + wall.height / 2 - 0.02 },
+    ]);
+
+    expect(samplePoints.every((point) => tileAt(prisonMap, point) !== "#")).toBe(true);
+  });
+
+  it("keeps central and storage authored objects out of tile walls", () => {
+    const authoredObjects = [
+      ...prisonMap.coverObjects,
+      ...prisonMap.setDressingObjects,
+    ].filter((object) => object.id.includes("central") || object.id.includes("storage"));
+
+    const samplePoints = authoredObjects.flatMap((object) => {
+      const left = object.position.x - object.width / 2;
+      const right = object.position.x + object.width / 2;
+      const top = object.position.y - object.height / 2;
+      const bottom = object.position.y + object.height / 2;
+      const points = [object.position];
+      for (let x = left; x <= right + 0.001; x += 0.1) {
+        points.push({ x, y: top }, { x, y: bottom });
+      }
+      for (let y = top; y <= bottom + 0.001; y += 0.1) {
+        points.push({ x: left, y }, { x: right, y });
+      }
+      return points;
+    });
+
+    expect(samplePoints.every((point) => tileAt(prisonMap, point) !== "#")).toBe(true);
+  });
+
+  it("routes center patrols through the storage room by way of the doorway", () => {
+    const storage = prisonMap.corridors.storage_room;
+    const door = prisonMap.doors.find((candidate) => candidate.id === "central_service_door");
+    const westLoop = prisonMap.patrolRoutes.find((route) => route.id === "west_loop");
+
+    expect(westLoop).toBeDefined();
+    expect(door).toBeDefined();
+    expect(westLoop?.points).toEqual(expect.arrayContaining([
+      expect.objectContaining({ x: door?.position.x, y: door?.position.y }),
+      expect.objectContaining({ corridor: "storage_room" }),
+    ]));
+    expect(westLoop?.points.some((point) => (
+      point.corridor === "storage_room" &&
+      point.x > storage.minX &&
+      point.x < storage.maxX + 1 &&
+      point.y > storage.minY &&
+      point.y < storage.maxY + 1 &&
+      tileAt(prisonMap, point) !== "#"
+    ))).toBe(true);
+    expect(westLoop?.points.every((point) => (
+      !prisonMap.coverObjects.some((object) => object.id.startsWith("storage_room_") && (
+        point.x > object.position.x - object.width / 2 - 0.28 &&
+        point.x < object.position.x + object.width / 2 + 0.28 &&
+        point.y > object.position.y - object.height / 2 - 0.28 &&
+        point.y < object.position.y + object.height / 2 + 0.28
+      ))
+    ))).toBe(true);
+  });
+
+  it("keeps the west patrol from trying to leave the storage room through its solid interior walls", () => {
+    const simulation = new GameSimulation();
+
+    stepMany(simulation, 5200);
+
+    const guard = simulation.getSnapshot().guards.find((candidate) => candidate.id === "guard-1");
+    expect(guard?.position.x).toBeGreaterThan(16.9);
+    expect(guard?.position.y).toBeGreaterThan(6.6);
+    expect(guard?.position.y).toBeLessThan(9.2);
+  });
+
+  it("keeps the storage crate high enough for cover without blocking the door opening", () => {
+    const door = prisonMap.doors.find((candidate) => candidate.id === "central_service_door");
+    const crate = prisonMap.coverObjects.find((candidate) => candidate.id === "storage_room_crate");
+
+    expect(door).toBeDefined();
+    expect(crate).toBeDefined();
+    expect(crate?.position.y).toBeLessThanOrEqual(7.45);
+    expect((crate?.position.y ?? 0) - (crate?.height ?? 0) / 2).toBeGreaterThan(
+      (door?.position.y ?? 0) + (door?.height ?? 0) / 2 + 0.75,
+    );
+  });
+
   it("prevents fixed-step player movement through walls", () => {
     const simulation = new GameSimulation();
     const start = simulation.getSnapshot().player.position;
@@ -97,8 +288,37 @@ describe("GameSimulation", () => {
     expect(simulation.getSnapshot().player.position.x).toBeLessThan(9.2);
   });
 
+  it("prevents player movement through active guards", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 4.65, y: 5.5 });
+
+    stepMany(simulation, 80, { ...noInput, direction: { x: 1, y: 0 } });
+
+    const player = simulation.getSnapshot().player.position;
+    expect(player.x).toBeLessThan(5.1);
+  });
+
+  it("lets players step over downed guards so body interactions stay usable", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 5.1, y: 5.5 });
+    let result = simulation.playerAttack("guard-a", "fists");
+    while (result?.bodyState === "active") {
+      result = simulation.playerAttack("guard-a", "fists");
+    }
+
+    stepMany(simulation, 80, { ...noInput, direction: { x: 1, y: 0 } });
+
+    expect(simulation.getSnapshot().player.position.x).toBeGreaterThan(5.65);
+  });
+
   it("slides player movement along cover edges when pressing into a solid object", () => {
-    const simulation = new GameSimulation();
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 22.5, y: 9.5 }, facing: { x: -1, y: 0 } }],
+    });
     simulation.setPlayerPosition({ x: 8.92, y: 4.5 });
 
     stepMany(simulation, 40, { ...noInput, direction: { x: 1, y: 1 } });
@@ -106,6 +326,29 @@ describe("GameSimulation", () => {
     const position = simulation.getSnapshot().player.position;
     expect(position.x).toBeLessThan(9.2);
     expect(position.y).toBeGreaterThan(4.8);
+  });
+
+  it("nudges player movement around cover corners when pressing into an object", () => {
+    const simulation = new GameSimulation();
+    simulation.setPlayerPosition({ x: 14.2, y: 7.7 });
+
+    stepMany(simulation, 40, { ...noInput, direction: { x: 1, y: 0 } });
+
+    const position = simulation.getSnapshot().player.position;
+    expect(position.x).toBeGreaterThan(14.2);
+    expect(position.y).toBeGreaterThan(7.75);
+  });
+
+  it("keeps corner nudges gradual while moving around cover", () => {
+    const simulation = new GameSimulation();
+    simulation.setPlayerPosition({ x: 14.2, y: 7.7 });
+
+    simulation.step({ ...noInput, direction: { x: 1, y: 0 } });
+
+    const position = simulation.getSnapshot().player.position;
+    expect(position.x).toBeGreaterThan(14.2);
+    expect(position.y).toBeGreaterThan(7.7);
+    expect(position.y - 7.7).toBeLessThan(0.014);
   });
 
   it("prevents walking through lockers while still allowing locker interaction", () => {
@@ -213,9 +456,9 @@ describe("GameSimulation", () => {
     const sprintDistance = distanceBetween(sprintStart, sprinting.getSnapshot().player.position);
 
     expect(walkDistance).toBeCloseTo(0.018333, 3);
-    expect(sprintDistance).toBeCloseTo(0.033333, 3);
+    expect(sprintDistance).toBeCloseTo(0.028333, 3);
     expect(sprintDistance).toBeGreaterThan(walkDistance);
-    expect(sprintDistance).toBeLessThan(0.04);
+    expect(sprintDistance).toBeLessThan(0.03);
   });
 
   it("collects the master key through an objective interaction", () => {
@@ -328,6 +571,24 @@ describe("GameSimulation", () => {
 
     simulation.step({ ...noInput, interact: true });
     expect(simulation.getSnapshot().doors.find((door) => door.id === "central_service_door")?.open).toBe(false);
+  });
+
+  it("lets players open the storage room and collect the supplies inside", () => {
+    const simulation = new GameSimulation();
+    simulation.setPlayerPosition({ x: 14.5, y: 6.45 });
+
+    simulation.step({ ...noInput, interact: true });
+    simulation.setPlayerPosition({ x: 13.4, y: 7.35 });
+    simulation.step({ ...noInput, interact: true });
+    simulation.setPlayerPosition({ x: 15.55, y: 7.25 });
+    simulation.step({ ...noInput, interact: true });
+
+    const snapshot = simulation.getSnapshot();
+    expect(snapshot.doors.find((door) => door.id === "central_service_door")?.open).toBe(true);
+    expect(snapshot.player.weapons.healingItems).toBe(1);
+    expect(snapshot.player.pebbles).toBe(1);
+    expect(snapshot.healingPickups.find((pickup) => pickup.id === "bandages_storage")?.collected).toBe(true);
+    expect(snapshot.pebbles.find((pebble) => pebble.id === "pebble_storage")?.collected).toBe(true);
   });
 
   it("keeps doors open when the player is standing in the doorway", () => {
@@ -465,21 +726,21 @@ describe("GameSimulation", () => {
 
   it("transitions from suspicion to chase after sustained line-of-sight", () => {
     const simulation = new GameSimulation({
-      guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+      guardOverrides: [{ id: "guard-a", position: { x: 18.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
     });
 
-    simulation.setPlayerPosition({ x: 5.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 20.5, y: 5.5 });
     stepMany(simulation, 60);
 
     expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.state).toBe("chase");
   });
 
-  it("keeps chasing for six seconds toward the last seen position after losing sight", () => {
+  it("keeps permanently chasing after losing sight once the guard has seen the player", () => {
     const simulation = new GameSimulation({
-      guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+      guardOverrides: [{ id: "guard-a", position: { x: 18.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
     });
 
-    simulation.setPlayerPosition({ x: 5.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 20.5, y: 5.5 });
     stepMany(simulation, 60);
     const chasingGuard = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a");
     expect(chasingGuard?.state).toBe("chase");
@@ -491,18 +752,25 @@ describe("GameSimulation", () => {
 
     stepMany(simulation, 2);
     const returnedGuard = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a");
-    expect(returnedGuard?.state).toBe("return");
+    expect(returnedGuard).toMatchObject({
+      state: "chase",
+      combatLockedOnPlayer: true,
+      lastSeenPlayerPosition: { x: 1.5, y: 10.5 },
+    });
   });
 
-  it("chases to the last seen position even when sight is lost before full capture chase", () => {
+  it("locks into chase immediately once sight is confirmed", () => {
     const simulation = new GameSimulation({
-      guardOverrides: [{ id: "guard-a", position: { x: 3.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+      guardOverrides: [{ id: "guard-a", position: { x: 18.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
     });
 
-    simulation.setPlayerPosition({ x: 5.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 20.5, y: 5.5 });
     stepMany(simulation, 10);
     const alertedGuard = simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a");
-    expect(alertedGuard?.state).toBe("investigate");
+    expect(alertedGuard).toMatchObject({
+      state: "chase",
+      combatLockedOnPlayer: true,
+    });
 
     simulation.setPlayerPosition({ x: 1.5, y: 10.5 });
     stepMany(simulation, 1);
@@ -513,7 +781,10 @@ describe("GameSimulation", () => {
     expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.state).toBe("chase");
 
     stepMany(simulation, 2);
-    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")?.state).toBe("return");
+    expect(simulation.getSnapshot().guards.find((guard) => guard.id === "guard-a")).toMatchObject({
+      state: "chase",
+      combatLockedOnPlayer: true,
+    });
   });
 
   it("keeps chasing briefly toward the last heard noise position", () => {
@@ -626,21 +897,44 @@ describe("GameSimulation", () => {
     expect(noise?.position.y).toBeCloseTo(player.y, 3);
   });
 
-  it("does not throw pebbles through walls", () => {
+  it("throws pebbles up to tile walls instead of through them", () => {
     const simulation = new GameSimulation();
     simulation.setPlayerPosition(prisonMap.pebbles[0].position);
     simulation.step({ ...noInput, interact: true });
     simulation.setPlayerPosition({ x: 10.5, y: 2.5 });
 
     simulation.step({ ...noInput, throwTarget: { x: 14.5, y: 2.5 } });
+    stepMany(simulation, 3);
 
-    expect(simulation.getSnapshot().player.pebbles).toBe(1);
-    expect(
-      simulation.getEvents().some((event) => event.type === "noise" && event.payload.source === "pebble"),
-    ).toBe(false);
+    const noise = simulation.getEvents().find(
+      (event) => event.type === "noise" && event.payload.source === "pebble",
+    );
+    expect(simulation.getSnapshot().player.pebbles).toBe(0);
+    expect(noise?.position.x).toBeLessThan(11);
+    expect(noise?.position.x).toBeGreaterThan(10.8);
+    expect(noise?.position.y).toBe(2.5);
   });
 
-  it("allows pebble throws over cover objects", () => {
+  it("throws pebbles up to authored room walls instead of through them", () => {
+    const simulation = new GameSimulation();
+    const storagePebble = prisonMap.pebbles.find((pebble) => pebble.id === "pebble_storage");
+    expect(storagePebble).toBeDefined();
+    simulation.setPlayerPosition(storagePebble?.position ?? { x: 15.55, y: 7.25 });
+    simulation.step({ ...noInput, interact: true });
+
+    simulation.step({ ...noInput, throwTarget: { x: 15.55, y: 10.5 } });
+    stepMany(simulation, 3);
+
+    const noise = simulation.getEvents().find(
+      (event) => event.type === "noise" && event.payload.source === "pebble",
+    );
+    expect(simulation.getSnapshot().player.pebbles).toBe(0);
+    expect(noise?.position.x).toBe(15.55);
+    expect(noise?.position.y).toBeLessThan(8.55);
+    expect(noise?.position.y).toBeGreaterThan(8.2);
+  });
+
+  it("throws pebbles up to cover objects instead of through them", () => {
     const simulation = new GameSimulation();
     simulation.setPlayerPosition(prisonMap.pebbles[0].position);
     simulation.step({ ...noInput, interact: true });
@@ -653,10 +947,12 @@ describe("GameSimulation", () => {
       (event) => event.type === "noise" && event.payload.source === "pebble",
     );
     expect(simulation.getSnapshot().player.pebbles).toBe(0);
-    expect(noise?.position).toEqual({ x: 11.3, y: 4.5 });
+    expect(noise?.position.x).toBeLessThan(9.25);
+    expect(noise?.position.x).toBeGreaterThan(8.9);
+    expect(noise?.position.y).toBe(4.5);
   });
 
-  it("allows pebble throws to land on cover objects and ripple there", () => {
+  it("lands pebble throws at the near edge of targeted cover objects", () => {
     const simulation = new GameSimulation();
     simulation.setPlayerPosition(prisonMap.pebbles[0].position);
     simulation.step({ ...noInput, interact: true });
@@ -669,7 +965,9 @@ describe("GameSimulation", () => {
       (event) => event.type === "noise" && event.payload.source === "pebble",
     );
     expect(simulation.getSnapshot().player.pebbles).toBe(0);
-    expect(noise?.position).toEqual(prisonMap.coverObjects[0].position);
+    expect(noise?.position.x).toBeLessThan(prisonMap.coverObjects[0].position.x);
+    expect(noise?.position.x).toBeGreaterThan(8.9);
+    expect(noise?.position.y).toBe(prisonMap.coverObjects[0].position.y);
   });
 
   it("distracts guards toward a thrown pebble landing point", () => {
@@ -744,7 +1042,9 @@ describe("GameSimulation", () => {
   });
 
   it("emits movement corridor ids that feed analytics route scoring", () => {
-    const simulation = new GameSimulation();
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 22.5, y: 9.5 }, facing: { x: -1, y: 0 } }],
+    });
     simulation.setPlayerPosition({ x: 18.5, y: 5.5 });
 
     simulation.step({ ...noInput, direction: { x: 1, y: 0 } });

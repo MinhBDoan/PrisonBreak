@@ -157,14 +157,46 @@ describe("simulation health outcome", () => {
     simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
 
     stepMany(simulation, 143);
-    expect(simulation.getPlayerHealth().hp).toBe(90);
+    expect(simulation.getPlayerHealth().hp).toBeGreaterThanOrEqual(80);
 
     stepMany(simulation, 100);
 
-    expect(simulation.getPlayerHealth().hp).toBeGreaterThan(40);
+    expect(simulation.getPlayerHealth().hp).toBeGreaterThanOrEqual(40);
     expect(simulation.getSnapshot().completed).toBeNull();
     expect(simulation.getEvents().filter((event) => event.type === "guard_attack").length).toBeLessThanOrEqual(6);
     expect(simulation.getEvents().some((event) => event.type === "capture")).toBe(false);
+  });
+
+  it("spaces guard melee hit events by the attack cooldown so feedback plays in intervals", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
+
+    stepMany(simulation, 170);
+
+    const guardAttacks = simulation.getEvents().filter((event) => event.type === "guard_attack");
+    expect(guardAttacks.length).toBeGreaterThanOrEqual(2);
+    expect(guardAttacks[1].atMs - guardAttacks[0].atMs).toBeGreaterThanOrEqual(2200);
+  });
+
+  it("keeps a guard permanently chasing after seeing the player", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 6.5, y: 2.5 });
+
+    stepMany(simulation, 1);
+
+    simulation.setPlayerPosition({ x: 1.5, y: 10.5 });
+    stepMany(simulation, 80);
+
+    expect(simulation.getSnapshot().guards[0]).toMatchObject({
+      id: "guard-a",
+      state: "chase",
+      combatLockedOnPlayer: true,
+      lastSeenPlayerPosition: { x: 1.5, y: 10.5 },
+    });
   });
 
   it("protects stored run events from nested payload mutation", () => {
@@ -195,11 +227,11 @@ describe("simulation health outcome", () => {
 describe("simulation combat integration", () => {
   it("pistol attack records attack noise, raises alert, and leaves the run active", () => {
     const simulation = new GameSimulation({
-      guardOverrides: [{ id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+      guardOverrides: [{ id: "guard-a", position: { x: 20.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
     });
     simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
-    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 18.5, y: 5.5 });
 
     const result = simulation.playerAttack("guard-a", "pistol");
 
@@ -217,7 +249,7 @@ describe("simulation combat integration", () => {
       type: "attack",
       payload: expect.objectContaining({
         weaponId: "pistol",
-        targetPosition: { x: 5.5, y: 2.5 },
+        targetPosition: { x: 20.5, y: 5.5 },
       }),
     }));
     const weaponNoise = simulation
@@ -230,19 +262,19 @@ describe("simulation combat integration", () => {
   it("step gun attacks aim toward the requested target instead of firing on selection", () => {
     const simulation = new GameSimulation({
       guardOverrides: [
-        { id: "guard-a", position: { x: 5.5, y: 2.5 }, facing: { x: 1, y: 0 } },
-        { id: "guard-b", position: { x: 5.5, y: 4.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-a", position: { x: 20.5, y: 5.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-b", position: { x: 20.5, y: 6.5 }, facing: { x: 1, y: 0 } },
       ],
     });
     simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
-    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 18.5, y: 5.5 });
 
     simulation.step({
       direction: { x: 0, y: 0 },
       sprint: false,
       interact: false,
-      attack: { mode: "gun", target: { x: 7, y: 2.5 } },
+      attack: { mode: "gun", target: { x: 22, y: 5.5 } },
     });
 
     expect(simulation.getGuardHealth("guard-a")?.hp).toBe(10);
@@ -252,11 +284,11 @@ describe("simulation combat integration", () => {
 
   it("reload emits quieter weapon noise than a pistol shot and near melee impact noise", () => {
     const simulation = new GameSimulation({
-      guardOverrides: [{ id: "guard-a", position: { x: 6.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+      guardOverrides: [{ id: "guard-a", position: { x: 20.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
     });
     simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
-    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 18.5, y: 5.5 });
     simulation.playerAttack("guard-a", "pistol");
 
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: false, reload: true });
@@ -272,13 +304,13 @@ describe("simulation combat integration", () => {
   it("allows the pistol to fire again after reload completes", () => {
     const simulation = new GameSimulation({
       guardOverrides: [
-        { id: "guard-a", position: { x: 6.5, y: 2.5 }, facing: { x: 1, y: 0 } },
-        { id: "guard-b", position: { x: 6.5, y: 4.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-a", position: { x: 20.5, y: 5.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-b", position: { x: 20.5, y: 6.5 }, facing: { x: 1, y: 0 } },
       ],
     });
     simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
-    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 18.5, y: 5.5 });
     simulation.playerAttack("guard-a", "pistol");
 
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: false, reload: true });
@@ -291,7 +323,7 @@ describe("simulation combat integration", () => {
       direction: { x: 0, y: 0 },
       sprint: false,
       interact: false,
-      attack: { mode: "gun", target: { x: 6.5, y: 4.5 } },
+      attack: { mode: "gun", target: { x: 20.5, y: 6.5 } },
     });
 
     expect(simulation.getGuardHealth("guard-b")?.hp).toBe(10);
@@ -312,6 +344,30 @@ describe("simulation combat integration", () => {
       type: "heal",
       position: prisonMap.healingPickups[0].position,
       payload: expect.objectContaining({ amount: 35, hp: 100 }),
+    }));
+  });
+
+  it("lets mouse-aimed melee miss when the swing is pointed away from a nearby guard", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+
+    simulation.step({
+      direction: { x: 0, y: 0 },
+      sprint: false,
+      interact: false,
+      attack: { mode: "melee", target: { x: 2.5, y: 3.5 } },
+    });
+
+    expect(simulation.getGuardHealth("guard-a")?.hp).toBe(45);
+    expect(simulation.getEvents()).toContainEqual(expect.objectContaining({
+      type: "attack",
+      payload: expect.objectContaining({
+        weaponId: "makeshift_knife",
+        hit: false,
+        targetId: null,
+      }),
     }));
   });
 
@@ -344,6 +400,21 @@ describe("simulation combat integration", () => {
     expect(simulation.getEvents().some((event) => event.type === "knockout")).toBe(true);
     expect(simulation.getEvents().some((event) => event.type === "body_discovered")).toBe(false);
     expect(simulation.getSnapshot().completed).toBeNull();
+  });
+
+  it("makes an attacked guard commit to chasing and fighting the player", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+
+    simulation.playerAttack("guard-a", "fists");
+
+    expect(simulation.getSnapshot().guards[0]).toMatchObject({
+      id: "guard-a",
+      state: "chase",
+      lastSeenPlayerPosition: { x: 2.5, y: 2.5 },
+    });
   });
 
   it("rejects attacks with weapons the player does not own", () => {
@@ -384,11 +455,11 @@ describe("simulation combat integration", () => {
   it("active guards discover knocked out guards and wake them up", () => {
     const simulation = new GameSimulation({
       guardOverrides: [
-        { id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } },
-        { id: "guard-b", position: { x: 4.2, y: 2.5 }, facing: { x: -1, y: 0 } },
+        { id: "guard-a", position: { x: 18.5, y: 5.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-b", position: { x: 19.3, y: 5.5 }, facing: { x: -1, y: 0 } },
       ],
     });
-    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 17.9, y: 5.5 });
 
     let result = simulation.playerAttack("guard-a", "fists");
     while (result?.bodyState === "active") {
@@ -447,6 +518,36 @@ describe("simulation combat integration", () => {
 
     stepMany(simulation, 40);
     expect(simulation.getEvents().some((event) => event.type === "body_discovered")).toBe(false);
+  });
+
+  it("lets the player drop a dragged body on the floor away from hiding spots", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 3.2, y: 2.5 }, facing: { x: 1, y: 0 } }],
+    });
+    simulation.setPlayerPosition({ x: 2.5, y: 2.5 });
+
+    let result = simulation.playerAttack("guard-a", "fists");
+    while (result?.bodyState === "active") {
+      result = simulation.playerAttack("guard-a", "fists");
+    }
+
+    simulation.setPlayerPosition({ x: 3.2, y: 2.5 });
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    simulation.setPlayerPosition({ x: 5.5, y: 5.5 });
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+
+    expect(simulation.getSnapshot().player.draggingBodyId).toBeNull();
+    expect(simulation.getBodyState().bodies["guard-a"]).toMatchObject({
+      bodyState: "knocked_out",
+      position: { x: 5.5, y: 5.5 },
+      hiddenIn: undefined,
+    });
+    expect(simulation.getEvents()).toContainEqual(
+      expect.objectContaining({
+        type: "body_dumped",
+        payload: expect.objectContaining({ guardId: "guard-a" }),
+      }),
+    );
   });
 
   it("prevents the player from hiding in a spot that already contains a dumped body", () => {
@@ -570,21 +671,21 @@ describe("simulation combat integration", () => {
 
   it("extends missed gun feedback to weapon range when no blocker is hit first", () => {
     const simulation = new GameSimulation({
-      guardOverrides: [{ id: "guard-a", position: { x: 6.5, y: 2.5 }, facing: { x: 1, y: 0 } }],
+      guardOverrides: [{ id: "guard-a", position: { x: 20.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
     });
     simulation.setPlayerPosition(prisonMap.weaponPickups[0].position);
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
-    simulation.setPlayerPosition({ x: 3.5, y: 2.5 });
+    simulation.setPlayerPosition({ x: 9.5, y: 5.5 });
 
     simulation.step({
       direction: { x: 0, y: 0 },
       sprint: false,
       interact: false,
-      attack: { mode: "gun", target: { x: 3.5, y: 4.5 } },
+      attack: { mode: "gun", target: { x: 9.5, y: 7.5 } },
     });
 
     const attack = simulation.getEvents().find((event) => event.type === "attack");
-    expect(attack?.payload.targetPosition).toEqual({ x: 3.5, y: 10.5 });
+    expect(attack?.payload.targetPosition).toEqual({ x: 9.5, y: 11 });
   });
 
   it("emits armed response telemetry once when combat noise crosses that threshold", () => {

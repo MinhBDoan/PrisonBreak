@@ -22,12 +22,25 @@ describe("GameRenderer", () => {
       kind: "player",
       x: expect.any(Number),
       y: expect.any(Number),
+      visual: expect.objectContaining({
+        artStyle: "pixel_tactics",
+        variant: "readable_hybrid",
+        species: "raccoon",
+        role: "prisoner",
+      }),
     });
-    expect(descriptors.guards).toEqual([
+    expect(descriptors.guards).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: "guard-1",
         kind: "guard",
         state: "patrol",
+        visual: expect.objectContaining({
+          artStyle: "pixel_tactics",
+          variant: "readable_hybrid",
+          species: "fox",
+          role: "guard",
+          uniformColor: 0xe28a3f,
+        }),
         visionCone: expect.objectContaining({
           color: 0xffc857,
           alpha: expect.any(Number),
@@ -42,14 +55,31 @@ describe("GameRenderer", () => {
           alpha: expect.any(Number),
         }),
       }),
-    ]);
+      expect.objectContaining({
+        id: "guard-3",
+        kind: "guard",
+        state: "patrol",
+        visionCone: expect.objectContaining({
+          color: 0xffc857,
+          alpha: expect.any(Number),
+        }),
+      }),
+    ]));
     expect(descriptors.guards[0].visionCone?.alpha).toBeLessThan(0.18);
     expect(descriptors.hidingSpots.map((spot) => spot.id)).toEqual([
       "locker_alpha",
       "locker_bravo",
       "shadow_nook",
+      "open_cell_shadow",
     ]);
     expect(descriptors.hidingSpots.some((spot) => spot.bodyOccupied)).toBe(false);
+    expect(descriptors.setDressingObjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "starter_cell_bars", kind: "bars" }),
+      expect.objectContaining({ id: "starter_cell_cot", kind: "cot" }),
+      expect.objectContaining({ id: "starter_cell_toilet", kind: "toilet" }),
+      expect.objectContaining({ id: "prisoner_cell_a_prisoner", kind: "prisoner" }),
+      expect.objectContaining({ id: "prisoner_cell_b_prisoner", kind: "prisoner" }),
+    ]));
     expect(descriptors.coverObjects).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: "crate_central_alpha",
@@ -63,7 +93,12 @@ describe("GameRenderer", () => {
       expect.objectContaining({ id: "central_service_wall_left" }),
       expect.objectContaining({ id: "central_service_wall_right" }),
     ]));
-    expect(descriptors.doors).toEqual([
+    expect(descriptors.doors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "starter_cell_door",
+        open: false,
+        unlocked: true,
+      }),
       expect.objectContaining({
         id: "security_room_door",
         open: false,
@@ -81,14 +116,14 @@ describe("GameRenderer", () => {
         open: false,
         unlocked: true,
       }),
-    ]);
+    ]));
     expect(descriptors.objectives.key.id).toBe("master_key");
     expect(descriptors.objectives.key.color).toBe(0x57d7ff);
     expect(descriptors.objectives.key.strokeColor).toBe(0xd7f7ff);
     expect(descriptors.objectives.exit.id).toBe("locked_exit");
   });
 
-  it("swings open doors around a hinge edge instead of their center", () => {
+  it("swings player-opened doors away from the player around a hinge edge", () => {
     const simulation = new GameSimulation();
     simulation.setPlayerPosition({ x: 14.5, y: 6.45 });
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
@@ -103,6 +138,22 @@ describe("GameRenderer", () => {
       hingeY: 380.8,
       originX: 0,
       originY: 0.5,
+      visualRotation: -Math.PI / 2,
+    });
+  });
+
+  it("swings doors away from guards when guards open them", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-1", position: { x: 14.5, y: 5.4 }, facing: { x: 0, y: 1 } }],
+    });
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: false });
+
+    const door = new GameRenderer()
+      .describe(simulation.getSnapshot())
+      .doors.find((candidate) => candidate.id === "central_service_door");
+
+    expect(door).toMatchObject({
+      open: true,
       visualRotation: Math.PI / 2,
     });
   });
