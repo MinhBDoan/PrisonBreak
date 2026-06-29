@@ -622,6 +622,33 @@ function createSetDressingSprite(
     addPart(-width * 0.26, 0, width * 0.12, height * 1.35, 0x6bd3ff, 0xd7f7ff, 0.9);
     addPart(0, 0, width * 0.12, height * 1.35, 0xffd166, 0xfff0b8, 0.9);
     addPart(width * 0.26, 0, width * 0.12, height * 1.35, 0xff5f56, 0xffb3b0, 0.92);
+  } else if (kind === "cell_grime") {
+    addPart(-width * 0.28, -height * 0.12, width * 0.32, Math.max(4, height * 0.38), 0x0b1118, 0x465b6c, 0.34);
+    addPart(width * 0.08, height * 0.05, width * 0.22, Math.max(4, height * 0.28), 0x394958, 0x6a7d8f, 0.28);
+    addPart(width * 0.34, -height * 0.04, width * 0.12, Math.max(4, height * 0.24), 0x8b5f3c, 0xb28b63, 0.24);
+  } else if (kind === "prisoner_shadow") {
+    addPart(0, 0, width, height, 0x05080c, 0x05080c, 0.38);
+    addPart(width * 0.18, 0, width * 0.42, Math.max(3, height * 0.55), 0x111820, 0x05080c, 0.22);
+  } else if (kind === "corridor_stripe") {
+    addPart(0, 0, width, height, 0xffd166, 0xfff0b8, 0.28);
+    addPart(-width * 0.32, 0, width * 0.12, height * 1.4, 0x6a7d8f, 0xd5dde5, 0.24);
+    addPart(width * 0.32, 0, width * 0.12, height * 1.4, 0x6a7d8f, 0xd5dde5, 0.24);
+  } else if (kind === "zone_sign") {
+    addPart(0, 0, width, height, 0x173142, 0x6bd3ff, 0.88);
+    addPart(-width * 0.24, 0, width * 0.12, height * 0.72, 0x6bd3ff, 0xd7f7ff, 0.82);
+    addPart(width * 0.08, 0, width * 0.34, Math.max(4, height * 0.18), 0xffd166, 0xfff0b8, 0.72);
+  } else if (kind === "supply_marker") {
+    addPart(0, 0, width, height, 0xcfffd5, 0x72d18b, 0.52);
+    addPart(0, 0, width * 0.18, height * 1.5, 0x72d18b, 0xcfffd5, 0.78);
+    addPart(0, 0, width * 0.64, height * 0.34, 0x72d18b, 0xcfffd5, 0.78);
+  } else if (kind === "exit_marker") {
+    addPart(-width * 0.22, 0, width * 0.22, height, 0x57d7ff, 0xd7f7ff, 0.58).setRotation(0.42);
+    addPart(0, 0, width * 0.22, height, 0x57d7ff, 0xd7f7ff, 0.66).setRotation(0.42);
+    addPart(width * 0.22, 0, width * 0.22, height, 0x57d7ff, 0xd7f7ff, 0.58).setRotation(0.42);
+  } else if (kind === "surveillance_marks") {
+    addPart(0, 0, width, Math.max(4, height * 0.12), 0x6bd3ff, 0xd7f7ff, 0.3);
+    addPart(-width * 0.24, height * 0.18, width * 0.32, Math.max(4, height * 0.1), 0xff5f56, 0xffb3b0, 0.26).setRotation(-0.28);
+    addPart(width * 0.24, height * 0.18, width * 0.32, Math.max(4, height * 0.1), 0xff5f56, 0xffb3b0, 0.26).setRotation(0.28);
   } else {
     addPart(0, 0, width, height, setDressingFill(kind), setDressingStroke(kind), setDressingAlpha(kind));
     addPart(0, -height * 0.2, width * 0.75, Math.max(4, height * 0.18), setDressingStroke(kind), setDressingFill(kind), 0.65);

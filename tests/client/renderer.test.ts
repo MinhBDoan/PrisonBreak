@@ -401,6 +401,87 @@ describe("GameRenderer", () => {
     expect(renderedProps.every((prop) => prop.childCount >= 3)).toBe(true);
   });
 
+  it("renders the expanded environment props as multi-part pixel containers", () => {
+    const renderer = new GameRenderer();
+    const renderedProps: Array<{ id: string; childCount: number }> = [];
+    const descriptors = new GameRenderer().describe(new GameSimulation().getSnapshot());
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const container = {
+            list: children,
+            setPosition: (x: number, y: number) => {
+              const match = descriptors.setDressingObjects.find((object) => object.x === x && object.y === y);
+              if (
+                match &&
+                [
+                  "starter_cell_wall_marks",
+                  "prisoner_cell_a_shadow",
+                  "central_corridor_floor_stripe",
+                  "east_corridor_signage",
+                  "storage_bandage_marker",
+                  "exit_floor_chevrons",
+                  "security_camera_sweep_marks",
+                ].includes(match.id)
+              ) {
+                renderedProps.push({ id: match.id, childCount: children.length });
+              }
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    expect(renderedProps).toEqual(expect.arrayContaining([
+      { id: "starter_cell_wall_marks", childCount: expect.any(Number) },
+      { id: "prisoner_cell_a_shadow", childCount: expect.any(Number) },
+      { id: "central_corridor_floor_stripe", childCount: expect.any(Number) },
+      { id: "east_corridor_signage", childCount: expect.any(Number) },
+      { id: "storage_bandage_marker", childCount: expect.any(Number) },
+      { id: "exit_floor_chevrons", childCount: expect.any(Number) },
+      { id: "security_camera_sweep_marks", childCount: expect.any(Number) },
+    ]));
+    expect(renderedProps.every((prop) => prop.childCount >= 2)).toBe(true);
+  });
+
   it("destroys old guard sprite parts when facing changes to a different silhouette", () => {
     const renderer = new GameRenderer();
     let childDestroyCount = 0;
