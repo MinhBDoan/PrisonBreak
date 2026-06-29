@@ -4,6 +4,31 @@ import { GameSimulation } from "../../client/src/game/GameSimulation";
 import { prisonMap } from "../../client/src/game/map";
 import { createHudModel, Hud } from "../../client/src/ui/Hud";
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getCssRuleBlock(css: string, selector: string): string {
+  const match = new RegExp(`${escapeRegex(selector)}\\s*\\{([^}]*)\\}`).exec(css);
+
+  if (!match) {
+    throw new Error(`CSS rule not found: ${selector}`);
+  }
+
+  return match[1];
+}
+
+function getCssProperty(css: string, selector: string, property: string): string {
+  const ruleBlock = getCssRuleBlock(css, selector);
+  const match = new RegExp(`(?:^|;)\\s*${escapeRegex(property)}\\s*:\\s*([^;]+)`).exec(ruleBlock);
+
+  if (!match) {
+    throw new Error(`CSS property not found: ${selector} ${property}`);
+  }
+
+  return match[1].trim();
+}
+
 describe("createHudModel", () => {
   it("shows the active prison level name", () => {
     const model = createHudModel(new GameSimulation().getSnapshot());
@@ -230,9 +255,9 @@ describe("createHudModel", () => {
 
     expect(root.innerHTML).toContain("Find the master key");
     expect(root.innerHTML).toContain('aria-label="Equipment"');
-    expect(css).toContain("background: rgba(7, 15, 23, 0.56);");
-    expect(css).toContain("background: rgba(7, 15, 23, 0.6);");
-    expect(css).toContain("padding: 13px 15px;");
-    expect(css).toContain("bottom: 16px;");
+    expect(getCssProperty(css, ".hud__panel", "background")).toBe("rgba(7, 15, 23, 0.56)");
+    expect(getCssProperty(css, ".hud__panel", "padding")).toBe("13px 15px");
+    expect(getCssProperty(css, ".hud__equipment", "background")).toBe("rgba(7, 15, 23, 0.6)");
+    expect(getCssProperty(css, ".hud__equipment", "bottom")).toBe("16px");
   });
 });
