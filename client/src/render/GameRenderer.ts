@@ -1009,7 +1009,7 @@ export class GameRenderer {
         scene.add.circle(pebble.x, pebble.y, 6, 0xb8aea1, 0.95);
       existing.setPosition(pebble.x, pebble.y);
       existing.setVisible(!pebble.collected);
-      existing.setStrokeStyle(2, 0xefe1c8, 0.4);
+      existing.setStrokeStyle(3, 0xfff0b8, 0.62);
       objects.pebbles.set(pebble.id, existing);
     }
 
@@ -1020,7 +1020,7 @@ export class GameRenderer {
       existing.setPosition(pickup.x, pickup.y);
       existing.setVisible(!pickup.collected);
       existing.setRotation(-0.18);
-      existing.setStrokeStyle(2, 0xffd166, 0.78);
+      existing.setStrokeStyle(4, 0xfff0b8, 0.86);
       objects.weaponPickups.set(pickup.id, existing);
     }
 
@@ -1030,7 +1030,7 @@ export class GameRenderer {
         scene.add.rectangle(pickup.x, pickup.y, 24, 16, 0xcfffd5, 0.96);
       existing.setPosition(pickup.x, pickup.y);
       existing.setVisible(!pickup.collected);
-      existing.setStrokeStyle(2, 0x72d18b, 0.85);
+      existing.setStrokeStyle(4, 0xcfffd5, 0.9);
       objects.healingPickups.set(pickup.id, existing);
     }
 
@@ -1043,7 +1043,7 @@ export class GameRenderer {
       existing.setSize(door.width, door.height);
       existing.setRotation(door.visualRotation);
       existing.setFillStyle(door.open ? 0x51745a : door.unlocked ? 0x8f5f34 : 0x5a3a28, door.open ? 0.72 : 0.98);
-      existing.setStrokeStyle(3, door.unlocked ? 0xffd166 : 0xc45a4a, 0.86);
+      existing.setStrokeStyle(4, door.unlocked ? 0xfff0b8 : 0xff7a6f, 0.9);
       objects.doors.set(door.id, existing);
     }
 
@@ -1070,7 +1070,7 @@ export class GameRenderer {
     }
     objects.key.setVisible(!descriptors.objectives.key.collected);
     objects.key.setFillStyle(descriptors.objectives.key.color, 0.96);
-    objects.key.setStrokeStyle(3, descriptors.objectives.key.strokeColor, 0.86);
+    objects.key.setStrokeStyle(4, descriptors.objectives.key.strokeColor, 0.92);
 
     if (!objects.exit) {
       objects.exit = scene.add.rectangle(
@@ -1082,7 +1082,7 @@ export class GameRenderer {
       );
     }
     objects.exit.setFillStyle(descriptors.objectives.exit.unlocked ? 0x5fa76c : 0x7a4f2a, 1);
-    objects.exit.setStrokeStyle(3, descriptors.objectives.exit.unlocked ? 0xa6e3af : 0xffb35c, 0.8);
+    objects.exit.setStrokeStyle(4, descriptors.objectives.exit.unlocked ? 0xd7f7ff : 0xfff0b8, 0.88);
 
     const liveGuardIds = new Set<string>();
     const draggedGuard = descriptors.guards.find((guard) => guard.dragging && !guard.hiddenBody);

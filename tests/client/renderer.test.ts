@@ -671,6 +671,104 @@ describe("GameRenderer", () => {
     );
   });
 
+  it("renders interactables with stronger pixel-world silhouette cues", () => {
+    const renderer = new GameRenderer();
+    const rectangles: Array<{ fillColor?: number; alpha?: number; strokeColor?: number; lineWidth?: number }> = [];
+    const stars: Array<{ fillColor?: number; strokeColor?: number; lineWidth?: number }> = [];
+    const circles: Array<{ fillColor?: number; strokeColor?: number; lineWidth?: number }> = [];
+    const makeRect = () => ({
+      setOrigin: () => makeRect(),
+      setPosition: () => makeRect(),
+      setSize: () => makeRect(),
+      setFillStyle: (fillColor: number, alpha?: number) => {
+        rectangles.push({ fillColor, alpha });
+        return makeRect();
+      },
+      setStrokeStyle: (lineWidth: number, strokeColor: number) => {
+        rectangles.push({ lineWidth, strokeColor });
+        return makeRect();
+      },
+      setDepth: () => makeRect(),
+      setRotation: () => makeRect(),
+      setAlpha: () => makeRect(),
+      setVisible: () => makeRect(),
+      setBlendMode: () => makeRect(),
+    });
+    const rectangle = makeRect();
+    const circle = {
+      setPosition: () => circle,
+      setVisible: () => circle,
+      setStrokeStyle: (lineWidth: number, strokeColor: number) => {
+        circles.push({ lineWidth, strokeColor });
+        return circle;
+      },
+      setBlendMode: () => circle,
+      setDepth: () => circle,
+    };
+    const star = {
+      setPosition: () => star,
+      setVisible: () => star,
+      setFillStyle: (fillColor: number) => {
+        stars.push({ fillColor });
+        return star;
+      },
+      setStrokeStyle: (lineWidth: number, strokeColor: number) => {
+        stars.push({ lineWidth, strokeColor });
+        return star;
+      },
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number, alpha?: number) => {
+          rectangles.push({ fillColor, alpha });
+          return rectangle;
+        },
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => ({
+          list: children,
+          setPosition: () => undefined,
+          setScale: () => undefined,
+          setDepth: () => undefined,
+          setAlpha: () => undefined,
+          setVisible: () => undefined,
+          setRotation: () => undefined,
+        }),
+        circle: (_x: number, _y: number, _radius: number, fillColor: number) => {
+          circles.push({ fillColor });
+          return circle;
+        },
+        star: (_x: number, _y: number, _points: number, _inner: number, _outer: number, fillColor: number) => {
+          stars.push({ fillColor });
+          return star;
+        },
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    const snapshot = new GameSimulation().getSnapshot();
+    renderer.render(scene as never, {
+      ...snapshot,
+      objectives: { ...snapshot.objectives, exitUnlocked: true },
+    });
+
+    expect(rectangles.some((rect) => rect.strokeColor === 0xd7f7ff && rect.lineWidth === 4)).toBe(true);
+    expect(rectangles.some((rect) => rect.strokeColor === 0xfff0b8 && rect.lineWidth === 4)).toBe(true);
+    expect(stars.some((shape) => shape.strokeColor === 0xd7f7ff && shape.lineWidth === 4)).toBe(true);
+    expect(circles.some((shape) => shape.strokeColor === 0xfff0b8 && shape.lineWidth === 3)).toBe(true);
+  });
+
   it("warms guard vision cones toward red as capture progress rises", () => {
     const renderer = new GameRenderer();
     const snapshot = new GameSimulation().getSnapshot();
