@@ -234,6 +234,24 @@ function setDressingFill(kind: SetDressingKind): number {
   if (kind === "weapon_rack") {
     return 0x8b929a;
   }
+  if (kind === "supply_shelf") {
+    return 0x5f4938;
+  }
+  if (kind === "supply_boxes") {
+    return 0xd6a04f;
+  }
+  if (kind === "floor_label") {
+    return 0xffd166;
+  }
+  if (kind === "control_panel") {
+    return 0x173142;
+  }
+  if (kind === "camera_marker") {
+    return 0x8b929a;
+  }
+  if (kind === "status_lights") {
+    return 0x6bd3ff;
+  }
   return 0xe6d7a8;
 }
 
@@ -262,12 +280,36 @@ function setDressingStroke(kind: SetDressingKind): number {
   if (kind === "weapon_rack") {
     return 0xffd166;
   }
+  if (kind === "supply_shelf") {
+    return 0xb28b63;
+  }
+  if (kind === "supply_boxes") {
+    return 0xffd166;
+  }
+  if (kind === "floor_label") {
+    return 0xfff0b8;
+  }
+  if (kind === "control_panel") {
+    return 0x6bd3ff;
+  }
+  if (kind === "camera_marker") {
+    return 0xd5dde5;
+  }
+  if (kind === "status_lights") {
+    return 0xd7f7ff;
+  }
   return 0xffefb0;
 }
 
 function setDressingAlpha(kind: SetDressingKind): number {
   if (kind === "monitor") {
     return 0.72;
+  }
+  if (kind === "floor_label") {
+    return 0.58;
+  }
+  if (kind === "control_panel" || kind === "camera_marker" || kind === "status_lights") {
+    return 0.9;
   }
   return kind === "floor_marking" ? 0.35 : 0.86;
 }
@@ -492,6 +534,15 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
   ]);
 }
 
+function destroyContainerWithChildren(container: Phaser.GameObjects.Container): void {
+  for (const child of container.list) {
+    if (child && typeof (child as { destroy?: () => void }).destroy === "function") {
+      (child as { destroy: () => void }).destroy();
+    }
+  }
+  container.destroy();
+}
+
 function createSetDressingSprite(
   scene: Phaser.Scene,
   kind: SetDressingKind,
@@ -541,6 +592,36 @@ function createSetDressingSprite(
     addPart(0, 0, width, Math.max(8, height), 0x3d4650, 0x8b929a, 0.96);
     addPart(-width * 0.22, -height * 0.1, width * 0.12, height + 14, 0xc7d1db, 0xffd166, 0.96).setRotation(-0.28);
     addPart(width * 0.18, -height * 0.05, width * 0.12, height + 14, 0xaab5bf, 0xffd166, 0.96).setRotation(0.22);
+  } else if (kind === "supply_shelf") {
+    addPart(0, 0, width, height, 0x5f4938, 0xb28b63, 0.92);
+    addPart(-width * 0.24, -height * 0.16, width * 0.22, height * 0.24, 0xd6a04f, 0xffd166, 0.94);
+    addPart(width * 0.16, -height * 0.12, width * 0.28, height * 0.2, 0x566b7f, 0x90a9bf, 0.94);
+    addPart(0, height * 0.22, width * 0.76, Math.max(4, height * 0.12), 0x2f2721, 0x9b7459, 0.9);
+  } else if (kind === "supply_boxes") {
+    addPart(-width * 0.18, height * 0.08, width * 0.42, height * 0.62, 0xd6a04f, 0xffd166, 0.94);
+    addPart(width * 0.18, -height * 0.08, width * 0.36, height * 0.52, 0xb28b63, 0xffd166, 0.92);
+    addPart(-width * 0.18, -height * 0.16, width * 0.3, Math.max(4, height * 0.12), 0xffefb0, 0xffd166, 0.78);
+    addPart(width * 0.2, -height * 0.28, width * 0.22, Math.max(4, height * 0.1), 0x566b7f, 0x90a9bf, 0.9);
+  } else if (kind === "floor_label") {
+    addPart(0, 0, width, height, 0xffd166, 0xfff0b8, 0.52);
+    addPart(-width * 0.24, 0, width * 0.12, height * 1.5, 0x263341, 0xfff0b8, 0.72);
+    addPart(0, 0, width * 0.12, height * 1.5, 0x263341, 0xfff0b8, 0.72);
+    addPart(width * 0.24, 0, width * 0.12, height * 1.5, 0x263341, 0xfff0b8, 0.72);
+  } else if (kind === "control_panel") {
+    addPart(0, 0, width, height, 0x173142, 0x6bd3ff, 0.94);
+    addPart(-width * 0.22, -height * 0.08, width * 0.2, height * 0.28, 0x75e1ff, 0xd7f7ff, 0.9);
+    addPart(width * 0.08, -height * 0.08, width * 0.16, height * 0.22, 0x2bc3ff, 0xd7f7ff, 0.88);
+    addPart(width * 0.28, height * 0.22, width * 0.12, height * 0.12, 0xff5f56, 0xffb3b0, 0.92);
+  } else if (kind === "camera_marker") {
+    addPart(0, 0, width, height, 0x3d4650, 0xd5dde5, 0.94);
+    addPart(width * 0.16, 0, width * 0.34, height * 0.52, 0x111820, 0x6bd3ff, 0.96);
+    addPart(-width * 0.28, -height * 0.2, width * 0.16, height * 0.2, 0x8b929a, 0xd5dde5, 0.9);
+    addPart(-width * 0.32, height * 0.24, width * 0.18, height * 0.18, 0x6bd3ff, 0xd7f7ff, 0.78);
+  } else if (kind === "status_lights") {
+    addPart(0, 0, width, height, 0x173142, 0x6bd3ff, 0.86);
+    addPart(-width * 0.26, 0, width * 0.12, height * 1.35, 0x6bd3ff, 0xd7f7ff, 0.9);
+    addPart(0, 0, width * 0.12, height * 1.35, 0xffd166, 0xfff0b8, 0.9);
+    addPart(width * 0.26, 0, width * 0.12, height * 1.35, 0xff5f56, 0xffb3b0, 0.92);
   } else {
     addPart(0, 0, width, height, setDressingFill(kind), setDressingStroke(kind), setDressingAlpha(kind));
     addPart(0, -height * 0.2, width * 0.75, Math.max(4, height * 0.18), setDressingStroke(kind), setDressingFill(kind), 0.65);
@@ -583,6 +664,9 @@ function addRoomDetails(scene: Phaser.Scene): Array<Phaser.GameObjects.Rectangle
   addRect(13, 7.3, 0.12, 2.4, 0x081018, 0.52, 4);
   addRect(17.12, 7.3, 0.12, 2.4, 0x081018, 0.52, 4);
   addRect(15.05, 8.72, 4.0, 0.12, 0x081018, 0.6, 4);
+  addRect(14.2, 7.9, 0.76, 0.08, 0xffd166, 0.36, 2);
+  addRect(16.08, 7.9, 0.62, 0.06, 0xffd166, 0.34, 2);
+  addRect(15.72, 6.38, 0.48, 0.05, 0xb28b63, 0.42, 2);
 
   for (const x of [2.5, 5.35, 7.8, 10.5, 13.5, 16.5, 19.5, 22.5]) {
     addRect(x, 9.02, 0.05, 1.85, 0x465b6c, 0.24, 0);
@@ -590,9 +674,14 @@ function addRoomDetails(scene: Phaser.Scene): Array<Phaser.GameObjects.Rectangle
   for (const y of [5.02, 6.98, 8.98]) {
     addRect(16.5, y, 15.0, 0.05, 0x465b6c, 0.22, 0);
   }
+  addRect(18.55, 1.75, 0.36, 0.07, 0x75e1ff, 0.42, 2);
+  addRect(20.85, 2.08, 0.24, 0.06, 0x75e1ff, 0.42, 2);
+  addRect(23.25, 2.95, 0.16, 0.06, 0xff5f56, 0.46, 2);
 
   addGlow(20.2, 2.1, 1.1, 0x6bd3ff, 0.12);
   addGlow(15.1, 7.35, 0.85, 0xffd166, 0.07);
+  addGlow(16.05, 7.85, 0.52, 0xffd166, 0.06);
+  addGlow(18.55, 1.75, 0.72, 0x6bd3ff, 0.08);
 
   return details;
 }
@@ -730,10 +819,12 @@ export class GameRenderer {
     for (let y = 0; y < prisonMap.height; y += 1) {
       for (let x = 0; x < prisonMap.width; x += 1) {
         const isWall = prisonMap.tiles[y][x] === "#";
+        const tileCenterX = world(x + 0.5);
+        const tileCenterY = world(y + 0.5);
         const rect = scene.add
           .rectangle(
-            world(x + 0.5),
-            world(y + 0.5),
+            tileCenterX,
+            tileCenterY,
             renderScale,
             renderScale,
             isWall ? 0x111820 : 0x263341,
@@ -741,8 +832,34 @@ export class GameRenderer {
           .setStrokeStyle(1, isWall ? 0x334151 : 0x34495c, isWall ? 0.75 : 0.25);
         if (isWall) {
           walls.push(rect);
+          walls.push(
+            scene.add
+              .rectangle(tileCenterX, world(y + 0.16), renderScale, world(0.14), 0x526171, 0.52)
+              .setDepth(2),
+          );
+          if (prisonMap.tiles[y + 1]?.[x] !== "#") {
+            walls.push(
+              scene.add
+                .rectangle(tileCenterX, world(y + 0.92), renderScale, world(0.16), 0x071018, 0.42)
+                .setDepth(2),
+            );
+          }
         } else {
           floors.push(rect);
+          if ((x * 7 + y * 11) % 9 === 0) {
+            floors.push(
+              scene.add
+                .rectangle(
+                  tileCenterX + world(0.18),
+                  tileCenterY - world(0.14),
+                  world(0.42),
+                  world(0.05),
+                  0x2d3a47,
+                  0.34,
+                )
+                .setDepth(1),
+            );
+          }
         }
       }
     }
@@ -950,7 +1067,7 @@ export class GameRenderer {
       liveGuardIds.add(guard.id);
       let container = objects.guards.get(guard.id);
       if (container && objects.guardSilhouettes.get(guard.id) !== guard.visual.silhouette) {
-        container.destroy();
+        destroyContainerWithChildren(container);
         objects.guards.delete(guard.id);
         objects.guardSilhouettes.delete(guard.id);
         container = undefined;
@@ -991,7 +1108,7 @@ export class GameRenderer {
 
     for (const [id, container] of objects.guards) {
       if (!liveGuardIds.has(id)) {
-        container.destroy();
+        destroyContainerWithChildren(container);
         objects.guards.delete(id);
         objects.guardSilhouettes.delete(id);
         objects.guardCones.get(id)?.destroy();

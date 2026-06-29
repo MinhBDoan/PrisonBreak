@@ -1,5 +1,5 @@
 import { prisonMap } from "../game/map";
-import type { SimulationSnapshot } from "../game/types";
+import type { SimulationSnapshot, WeaponId } from "../game/types";
 import type { BlockingError, CompleteRunResponse, RunOutcome } from "../../../shared/contracts";
 import { weapons } from "../game/weapons";
 
@@ -151,7 +151,11 @@ function alertTone(level: string): HudBanner["tone"] {
   return "neutral";
 }
 
-export function createHudModel(snapshot: SimulationSnapshot, selectedSlot: HudSelectedSlot = "melee"): HudModel {
+export function createHudModel(
+  snapshot: SimulationSnapshot,
+  selectedSlot: HudSelectedSlot = "melee",
+  selectedMeleeWeaponId?: WeaponId,
+): HudModel {
   const health = snapshot.player.health ?? { entityId: "player", hp: 100, maxHp: 100, isDown: false };
   const weaponState = snapshot.player.weapons;
   const gunId = weaponState?.primaryGunId ?? weaponState?.sidearmId ?? null;
@@ -181,7 +185,7 @@ export function createHudModel(snapshot: SimulationSnapshot, selectedSlot: HudSe
     selectedSlot,
     healthLabel: `${Math.ceil(health.hp)} / ${Math.ceil(health.maxHp)}`,
     healthPercent: Math.round((health.hp / Math.max(1, health.maxHp)) * 100),
-    meleeLabel: weapons[weaponState?.meleeWeaponId ?? "fists"].label,
+    meleeLabel: weapons[selectedMeleeWeaponId ?? weaponState?.meleeWeaponId ?? "fists"].label,
     gunLabel: gun?.label ?? "No gun",
     ammoLabel: gun ? (equippedGunIsReloading ? reloadLabel : `${loadedAmmo} / ${reserveAmmo}`) : "-",
     reloadLabel,
@@ -215,8 +219,8 @@ export class Hud {
     this.root.classList.add("hud");
   }
 
-  update(snapshot: SimulationSnapshot, selectedSlot: HudSelectedSlot = "melee"): void {
-    const model = createHudModel(snapshot, selectedSlot);
+  update(snapshot: SimulationSnapshot, selectedSlot: HudSelectedSlot = "melee", selectedMeleeWeaponId?: WeaponId): void {
+    const model = createHudModel(snapshot, selectedSlot, selectedMeleeWeaponId);
     const healthPercent = escapePercent(model.healthPercent);
     const suspicionPercent = escapePercent(model.suspicionPercent);
 

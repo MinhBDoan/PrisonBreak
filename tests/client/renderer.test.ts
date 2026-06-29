@@ -307,6 +307,156 @@ describe("GameRenderer", () => {
     expect(propContainers.every((container) => container.childCount >= 2)).toBe(true);
   });
 
+  it("renders storage and security identity props as multi-part pixel containers", () => {
+    const renderer = new GameRenderer();
+    const renderedProps: Array<{ id: string; childCount: number }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const container = {
+            list: children,
+            setPosition: (x: number, y: number) => {
+              const match = new GameRenderer().describe(new GameSimulation().getSnapshot()).setDressingObjects.find(
+                (object) => object.x === x && object.y === y,
+              );
+              if (
+                match &&
+                [
+                  "storage_supply_shelf",
+                  "storage_floor_labels",
+                  "storage_supply_boxes",
+                  "security_wall_panel",
+                  "security_camera_marker",
+                  "security_status_lights",
+                ].includes(match.id)
+              ) {
+                renderedProps.push({ id: match.id, childCount: children.length });
+              }
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    expect(renderedProps).toEqual(expect.arrayContaining([
+      { id: "storage_supply_shelf", childCount: expect.any(Number) },
+      { id: "storage_floor_labels", childCount: expect.any(Number) },
+      { id: "storage_supply_boxes", childCount: expect.any(Number) },
+      { id: "security_wall_panel", childCount: expect.any(Number) },
+      { id: "security_camera_marker", childCount: expect.any(Number) },
+      { id: "security_status_lights", childCount: expect.any(Number) },
+    ]));
+    expect(renderedProps.every((prop) => prop.childCount >= 3)).toBe(true);
+  });
+
+  it("destroys old guard sprite parts when facing changes to a different silhouette", () => {
+    const renderer = new GameRenderer();
+    let childDestroyCount = 0;
+    let containerDestroyCount = 0;
+    const createShape = () => ({
+      destroy: () => {
+        childDestroyCount += 1;
+      },
+      setOrigin: () => createShape(),
+      setPosition: () => createShape(),
+      setSize: () => createShape(),
+      setFillStyle: () => createShape(),
+      setStrokeStyle: () => createShape(),
+      setDepth: () => createShape(),
+      setRotation: () => createShape(),
+      setAlpha: () => createShape(),
+      setVisible: () => createShape(),
+      setBlendMode: () => createShape(),
+    });
+    const rectangle = createShape();
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: Array<{ destroy?: () => void }>) => {
+          const container = {
+            list: children,
+            destroy: () => {
+              containerDestroyCount += 1;
+            },
+            setPosition: () => container,
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+    const downward = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 18.5, y: 5.5 }, facing: { x: 0, y: 1 } }],
+    });
+    const sideways = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 18.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
+    });
+
+    renderer.render(scene as never, downward.getSnapshot());
+    renderer.render(scene as never, sideways.getSnapshot());
+
+    expect(containerDestroyCount).toBe(1);
+    expect(childDestroyCount).toBeGreaterThan(0);
+  });
+
   it("mounts room identity details over the base tile map", () => {
     const renderer = new GameRenderer();
     const rectangles: Array<{ alpha?: number; fillColor?: number; strokeColor?: number }> = [];
@@ -344,7 +494,14 @@ describe("GameRenderer", () => {
     expect(rectangles.some((rect) => rect.fillColor === 0x1f2c38 && rect.alpha === 0.78)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0x1a2430 && rect.alpha === 0.76)).toBe(true);
     expect(rectangles.some((rect) => rect.strokeColor === 0x465b6c)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x526171 && rect.alpha === 0.52)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x071018 && rect.alpha === 0.42)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x2d3a47 && rect.alpha === 0.34)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0xffd166 && rect.alpha === 0.36)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x75e1ff && rect.alpha === 0.42)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0xff5f56 && rect.alpha === 0.46)).toBe(true);
     expect(circles.some((light) => light.fillColor === 0x6bd3ff)).toBe(true);
+    expect(circles.some((light) => light.fillColor === 0xffd166)).toBe(true);
   });
 
   it("swings player-opened doors away from the player around a hinge edge", () => {

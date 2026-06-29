@@ -19,7 +19,7 @@ export type SimulationInput = {
   sprint: boolean;
   interact: boolean;
   throwTarget?: Vector | null;
-  attack?: { mode: "melee" | "gun"; target: Vector } | null;
+  attack?: { mode: "melee" | "gun"; target: Vector; weaponId?: WeaponId } | null;
   heal?: boolean;
   reload?: boolean;
 };
@@ -46,7 +46,13 @@ export type SetDressingKind =
   | "prisoner"
   | "desk"
   | "monitor"
-  | "weapon_rack";
+  | "weapon_rack"
+  | "supply_shelf"
+  | "supply_boxes"
+  | "floor_label"
+  | "control_panel"
+  | "camera_marker"
+  | "status_lights";
 
 export type SetDressingObject = {
   id: string;

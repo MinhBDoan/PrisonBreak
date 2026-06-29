@@ -354,7 +354,7 @@ export class GameSimulation {
       this.useHealingItem();
     }
     if (input.attack) {
-      this.attackToward(input.attack.mode, input.attack.target);
+      this.attackToward(input.attack.mode, input.attack.target, input.attack.weaponId);
     }
     this.resolvePebbleImpacts();
     this.resolvePendingWakeups();
@@ -587,8 +587,11 @@ export class GameSimulation {
     };
   }
 
-  private attackToward(mode: "melee" | "gun", targetPosition: Vector): void {
-    const weaponId = mode === "gun" ? (this.playerWeapons.sidearmId ?? this.playerWeapons.primaryGunId) : this.playerWeapons.meleeWeaponId;
+  private attackToward(mode: "melee" | "gun", targetPosition: Vector, requestedWeaponId?: WeaponId): void {
+    const weaponId =
+      mode === "gun"
+        ? (requestedWeaponId ?? this.playerWeapons.sidearmId ?? this.playerWeapons.primaryGunId)
+        : (requestedWeaponId ?? this.playerWeapons.meleeWeaponId);
     if (!weaponId) {
       return;
     }

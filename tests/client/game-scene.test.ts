@@ -361,6 +361,43 @@ describe("GameScene", () => {
     }));
   });
 
+  it("toggles melee between knife and fists with repeated melee hotkey presses", async () => {
+    const { scene } = await createSceneHarness();
+
+    startRun(scene, 1);
+    const runtime = scene as unknown as {
+      input: { emit: (type: string, pointer: unknown) => void; activePointer: unknown };
+      simulation: { step: (input: unknown) => void };
+    };
+    const stepSpy = vi.spyOn(runtime.simulation, "step");
+    const pointer = {
+      worldX: 64 * 3,
+      worldY: 64 * 2,
+      leftButtonDown: () => true,
+    };
+
+    expect(hudCalls.update).toHaveBeenLastCalledWith(expect.anything(), "melee", "makeshift_knife");
+
+    windowListeners.keydown?.forEach((listener) => listener({ code: "Digit1", key: "1" }));
+    scene.update();
+
+    expect(hudCalls.update).toHaveBeenLastCalledWith(expect.anything(), "melee", "fists");
+
+    runtime.input.activePointer = pointer;
+    runtime.input.emit("pointerdown", pointer);
+    runtime.input.emit("pointerup", pointer);
+    scene.update();
+
+    expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      attack: { mode: "melee", target: { x: 3, y: 2 }, weaponId: "fists" },
+    }));
+
+    windowListeners.keydown?.forEach((listener) => listener({ code: "Digit1", key: "1" }));
+    scene.update();
+
+    expect(hudCalls.update).toHaveBeenLastCalledWith(expect.anything(), "melee", "makeshift_knife");
+  });
+
   it("selects misc with 3 and only charges pebble throws from the misc slot", async () => {
     const { scene } = await createSceneHarness();
 

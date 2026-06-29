@@ -40,6 +40,14 @@ describe("createHudModel", () => {
     });
   });
 
+  it("can show fists as the selected melee option while a knife is equipped", () => {
+    const simulation = new GameSimulation();
+
+    const model = createHudModel(simulation.getSnapshot(), "melee", "fists");
+
+    expect(model.meleeLabel).toBe("Fists");
+  });
+
   it("labels death as death instead of capture", () => {
     const simulation = new GameSimulation();
     simulation.applyPlayerDamage(100);

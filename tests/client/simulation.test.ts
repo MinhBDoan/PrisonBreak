@@ -145,6 +145,31 @@ describe("GameSimulation", () => {
     ]));
   });
 
+  it("adds non-blocking storage and security room identity dressing", () => {
+    expect(prisonMap.setDressingObjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "storage_supply_shelf", kind: "supply_shelf" }),
+      expect.objectContaining({ id: "storage_floor_labels", kind: "floor_label" }),
+      expect.objectContaining({ id: "storage_supply_boxes", kind: "supply_boxes" }),
+      expect.objectContaining({ id: "security_wall_panel", kind: "control_panel" }),
+      expect.objectContaining({ id: "security_camera_marker", kind: "camera_marker" }),
+      expect.objectContaining({ id: "security_status_lights", kind: "status_lights" }),
+    ]));
+
+    const identityObjects = prisonMap.setDressingObjects.filter((object) =>
+      [
+        "storage_supply_shelf",
+        "storage_floor_labels",
+        "storage_supply_boxes",
+        "security_wall_panel",
+        "security_camera_marker",
+        "security_status_lights",
+      ].includes(object.id),
+    );
+    const samplePoints = identityObjects.map((object) => object.position);
+
+    expect(samplePoints.every((point) => tileAt(prisonMap, point) !== "#")).toBe(true);
+  });
+
   it("adds a readable central route choice with cover on one path and a posted guard on the other", () => {
     expect(prisonMap.coverObjects).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "central_low_cover" }),
@@ -157,6 +182,18 @@ describe("GameSimulation", () => {
         facing: { x: -1, y: 0 },
       }),
     ]));
+  });
+
+  it("keeps enough clearance between the central crate and locker for guards to chase through", () => {
+    const crate = prisonMap.coverObjects.find((object) => object.id === "crate_central_alpha");
+    const locker = prisonMap.hidingSpots.find((spot) => spot.id === "locker_alpha");
+
+    expect(crate).toBeDefined();
+    expect(locker).toBeDefined();
+    const crateRightEdge = (crate?.position.x ?? 0) + (crate?.width ?? 0) / 2;
+    const lockerLeftEdge = (locker?.position.x ?? 0) - 0.68 / 2;
+
+    expect(lockerLeftEdge - crateRightEdge).toBeGreaterThan(0.56);
   });
 
   it("keeps posted guards stationary until they react to the player", () => {
@@ -181,6 +218,25 @@ describe("GameSimulation", () => {
     ]);
 
     expect(samplePoints.every((point) => tileAt(prisonMap, point) !== "#")).toBe(true);
+  });
+
+  it("aligns the storage room west corner flush with the center tile wall", () => {
+    const westWall = prisonMap.coverObjects.find((object) => object.id === "storage_room_west_wall");
+    const topWall = prisonMap.coverObjects.find((object) => object.id === "central_service_wall_left");
+
+    expect(westWall).toBeDefined();
+    expect(topWall).toBeDefined();
+    const westWallLeftEdge = (westWall?.position.x ?? 0) - (westWall?.width ?? 0) / 2;
+    const topWallLeftEdge = (topWall?.position.x ?? 0) - (topWall?.width ?? 0) / 2;
+    const westWallTopEdge = (westWall?.position.y ?? 0) - (westWall?.height ?? 0) / 2;
+    const westWallBottomEdge = (westWall?.position.y ?? 0) + (westWall?.height ?? 0) / 2;
+    const topWallBottomEdge = (topWall?.position.y ?? 0) + (topWall?.height ?? 0) / 2;
+
+    expect(westWallLeftEdge).toBeCloseTo(13, 3);
+    expect(topWallLeftEdge).toBeCloseTo(13, 3);
+    expect(westWallTopEdge).toBeCloseTo(6, 3);
+    expect(westWallBottomEdge).toBeCloseTo(9, 3);
+    expect(westWallTopEdge).toBeLessThanOrEqual(topWallBottomEdge);
   });
 
   it("keeps central and storage authored objects out of tile walls", () => {
@@ -353,7 +409,7 @@ describe("GameSimulation", () => {
 
   it("prevents walking through lockers while still allowing locker interaction", () => {
     const simulation = new GameSimulation();
-    simulation.setPlayerPosition({ x: 11.4, y: 4.5 });
+    simulation.setPlayerPosition({ x: 12.0, y: 4.5 });
 
     stepMany(simulation, 80, { ...noInput, direction: { x: -1, y: 0 } });
     expect(simulation.getSnapshot().player.position.x).toBeGreaterThan(10.9);
@@ -379,7 +435,7 @@ describe("GameSimulation", () => {
 
   it("places players at a free spot around a locker when exiting near blocked cover", () => {
     const simulation = new GameSimulation();
-    simulation.setPlayerPosition({ x: 11.4, y: 4.5 });
+    simulation.setPlayerPosition({ x: 12.0, y: 4.5 });
 
     stepMany(simulation, 80, { ...noInput, direction: { x: -1, y: 0 } });
     simulation.step({ ...noInput, interact: true });
@@ -396,7 +452,7 @@ describe("GameSimulation", () => {
 
   it("exits a locker on the side matching the held movement direction when clear", () => {
     const simulation = new GameSimulation();
-    simulation.setPlayerPosition({ x: 11.4, y: 4.5 });
+    simulation.setPlayerPosition({ x: 12.0, y: 4.5 });
 
     stepMany(simulation, 80, { ...noInput, direction: { x: -1, y: 0 } });
     simulation.step({ ...noInput, interact: true });
@@ -410,7 +466,7 @@ describe("GameSimulation", () => {
 
   it("falls back to a free locker exit side when the requested direction is blocked", () => {
     const simulation = new GameSimulation();
-    simulation.setPlayerPosition({ x: 11.4, y: 4.5 });
+    simulation.setPlayerPosition({ x: 12.0, y: 4.5 });
 
     stepMany(simulation, 80, { ...noInput, direction: { x: -1, y: 0 } });
     simulation.step({ ...noInput, interact: true });
