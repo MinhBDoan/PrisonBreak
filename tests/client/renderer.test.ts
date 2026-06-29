@@ -286,6 +286,46 @@ describe("GameRenderer", () => {
     expect(propContainers.every((container) => container.childCount >= 2)).toBe(true);
   });
 
+  it("mounts room identity details over the base tile map", () => {
+    const renderer = new GameRenderer();
+    const rectangles: Array<{ alpha?: number; fillColor?: number; strokeColor?: number }> = [];
+    const circles: Array<{ alpha?: number; fillColor?: number }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setStrokeStyle: (_lineWidth: number, strokeColor: number) => {
+        rectangles[rectangles.length - 1].strokeColor = strokeColor;
+        return rectangle;
+      },
+      setBlendMode: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+    };
+    const circle = {
+      setBlendMode: () => circle,
+      setDepth: () => circle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number, alpha?: number) => {
+          rectangles.push({ fillColor, alpha });
+          return rectangle;
+        },
+        circle: (_x: number, _y: number, _radius: number, fillColor: number, alpha?: number) => {
+          circles.push({ fillColor, alpha });
+          return circle;
+        },
+      },
+    };
+
+    renderer.mount(scene as never);
+
+    expect(rectangles.length).toBeGreaterThan(260);
+    expect(rectangles.some((rect) => rect.fillColor === 0x1f2c38 && rect.alpha === 0.78)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x1a2430 && rect.alpha === 0.76)).toBe(true);
+    expect(rectangles.some((rect) => rect.strokeColor === 0x465b6c)).toBe(true);
+    expect(circles.some((light) => light.fillColor === 0x6bd3ff)).toBe(true);
+  });
+
   it("swings player-opened doors away from the player around a hinge edge", () => {
     const simulation = new GameSimulation();
     simulation.setPlayerPosition({ x: 14.5, y: 6.45 });

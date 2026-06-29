@@ -107,6 +107,7 @@ type RenderObjects = {
   floors: Phaser.GameObjects.Rectangle[];
   walls: Phaser.GameObjects.Rectangle[];
   lights: Phaser.GameObjects.Arc[];
+  roomDetails: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Arc>;
   player?: Phaser.GameObjects.Container;
   guards: Map<string, Phaser.GameObjects.Container>;
   guardCones: Map<string, Phaser.GameObjects.Graphics>;
@@ -486,6 +487,54 @@ function createSetDressingSprite(
   return scene.add.container(0, 0, parts);
 }
 
+function addRoomDetails(scene: Phaser.Scene): Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Arc> {
+  const details: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Arc> = [];
+  const addRect = (
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    color: number,
+    alpha: number,
+    depth = 0,
+    strokeColor?: number,
+  ): Phaser.GameObjects.Rectangle => {
+    const rect = scene.add.rectangle(world(x), world(y), world(width), world(height), color, alpha);
+    rect.setDepth(depth);
+    if (strokeColor !== undefined) {
+      rect.setStrokeStyle(1, strokeColor, 0.45);
+    }
+    details.push(rect);
+    return rect;
+  };
+  const addGlow = (x: number, y: number, radius: number, color: number, alpha: number): Phaser.GameObjects.Arc => {
+    const glow = scene.add.circle(world(x), world(y), world(radius), color, alpha).setBlendMode("ADD");
+    glow.setDepth(1);
+    details.push(glow);
+    return glow;
+  };
+
+  addRect(5, 2.48, 8.2, 2.95, 0x1f2c38, 0.78, 0, 0x465b6c);
+  addRect(5, 3.92, 8.2, 0.12, 0x0b1118, 0.72, 4);
+  addRect(14.9, 7.34, 4.2, 2.7, 0x1a2430, 0.76, 0, 0x405568);
+  addRect(20.75, 2.5, 7.5, 3.1, 0x172433, 0.68, 0, 0x465b6c);
+  addRect(13, 7.3, 0.12, 2.4, 0x081018, 0.52, 4);
+  addRect(17.12, 7.3, 0.12, 2.4, 0x081018, 0.52, 4);
+  addRect(15.05, 8.72, 4.0, 0.12, 0x081018, 0.6, 4);
+
+  for (const x of [2.5, 5.35, 7.8, 10.5, 13.5, 16.5, 19.5, 22.5]) {
+    addRect(x, 9.02, 0.05, 1.85, 0x465b6c, 0.24, 0);
+  }
+  for (const y of [5.02, 6.98, 8.98]) {
+    addRect(16.5, y, 15.0, 0.05, 0x465b6c, 0.22, 0);
+  }
+
+  addGlow(20.2, 2.1, 1.1, 0x6bd3ff, 0.12);
+  addGlow(15.1, 7.35, 0.85, 0xffd166, 0.07);
+
+  return details;
+}
+
 export class GameRenderer {
   private objects: RenderObjects | null = null;
   private lastNoiseRippleAtMs = Number.NEGATIVE_INFINITY;
@@ -646,11 +695,13 @@ export class GameRenderer {
           .setBlendMode("ADD"),
       );
     }
+    const roomDetails = addRoomDetails(scene);
 
     this.objects = {
       floors,
       walls,
       lights,
+      roomDetails,
       guards: new Map(),
       guardCones: new Map(),
       hidingSpots: new Map(),
