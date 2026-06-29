@@ -219,6 +219,73 @@ describe("GameRenderer", () => {
     expect(createdContainers.filter((container) => container.depth === 5 && container.scale === 1)).toHaveLength(2);
   });
 
+  it("renders set dressing props as pixel object containers", () => {
+    const renderer = new GameRenderer();
+    const createdContainers: Array<{ depth: number | null; childCount: number }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const container = {
+            list: children,
+            depth: null as number | null,
+            setPosition: () => container,
+            setScale: () => container,
+            setDepth: (depth: number) => {
+              container.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          createdContainers.push({ depth: container.depth, childCount: children.length });
+          const index = createdContainers.length - 1;
+          container.setDepth = (depth: number) => {
+            container.depth = depth;
+            createdContainers[index].depth = depth;
+            return container;
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    const propContainers = createdContainers.filter((container) => container.depth === 3);
+    expect(propContainers.length).toBeGreaterThanOrEqual(10);
+    expect(propContainers.every((container) => container.childCount >= 2)).toBe(true);
+  });
+
   it("swings player-opened doors away from the player around a hinge edge", () => {
     const simulation = new GameSimulation();
     simulation.setPlayerPosition({ x: 14.5, y: 6.45 });

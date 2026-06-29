@@ -429,6 +429,63 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
   ]);
 }
 
+function createSetDressingSprite(
+  scene: Phaser.Scene,
+  kind: SetDressingKind,
+  width: number,
+  height: number,
+): Phaser.GameObjects.Container {
+  const parts: Phaser.GameObjects.Rectangle[] = [];
+  const addPart = (
+    x: number,
+    y: number,
+    partWidth: number,
+    partHeight: number,
+    color: number,
+    stroke = setDressingStroke(kind),
+    alpha = setDressingAlpha(kind),
+  ): Phaser.GameObjects.Rectangle => {
+    const part = addPixelRect(scene, x, y, partWidth, partHeight, color, alpha);
+    part.setStrokeStyle(2, stroke, 0.72);
+    parts.push(part);
+    return part;
+  };
+
+  if (kind === "bars") {
+    const barCount = Math.max(3, Math.floor(width / 12));
+    addPart(0, 0, width, Math.max(4, height), 0x394958, 0x9aa7b4, 0.72);
+    for (let index = 0; index < barCount; index += 1) {
+      const x = -width / 2 + ((index + 0.5) * width) / barCount;
+      addPart(x, 0, 4, Math.max(20, height + 18), 0xb8c6d1, 0xe2e8ef, 0.95);
+    }
+  } else if (kind === "cot") {
+    addPart(0, 0, width, height, 0x3e5364, 0x7f93a8, 0.96);
+    addPart(-width * 0.28, -height * 0.15, width * 0.28, height * 0.42, 0xd6dde4, 0xf0f6fa, 0.98);
+    addPart(width * 0.12, height * 0.2, width * 0.62, Math.max(5, height * 0.18), 0x2d3b49, 0x6a7d8f, 0.96);
+  } else if (kind === "toilet") {
+    addPart(0, 2, width * 0.76, height * 0.7, 0xc8d3dc, 0xf0f6fa, 0.98);
+    addPart(0, -height * 0.28, width * 0.58, height * 0.32, 0xe9f1f6, 0xffffff, 0.98);
+    addPart(0, 3, width * 0.32, height * 0.2, 0x91a8b6, 0xf0f6fa, 0.86);
+  } else if (kind === "desk") {
+    addPart(0, 0, width, height, 0x4d3f34, 0x9b7459, 0.96);
+    addPart(-width * 0.26, height * 0.18, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
+    addPart(width * 0.26, height * 0.18, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
+  } else if (kind === "monitor") {
+    addPart(0, 0, width, Math.max(10, height), 0x173142, 0x6bd3ff, 0.96);
+    addPart(-width * 0.2, 0, width * 0.18, Math.max(5, height * 0.55), 0x75e1ff, 0xd7f7ff, 0.9);
+    addPart(width * 0.18, 0, width * 0.22, Math.max(5, height * 0.55), 0x2bc3ff, 0xd7f7ff, 0.88);
+  } else if (kind === "weapon_rack") {
+    addPart(0, 0, width, Math.max(8, height), 0x3d4650, 0x8b929a, 0.96);
+    addPart(-width * 0.22, -height * 0.1, width * 0.12, height + 14, 0xc7d1db, 0xffd166, 0.96).setRotation(-0.28);
+    addPart(width * 0.18, -height * 0.05, width * 0.12, height + 14, 0xaab5bf, 0xffd166, 0.96).setRotation(0.22);
+  } else {
+    addPart(0, 0, width, height, setDressingFill(kind), setDressingStroke(kind), setDressingAlpha(kind));
+    addPart(0, -height * 0.2, width * 0.75, Math.max(4, height * 0.18), setDressingStroke(kind), setDressingFill(kind), 0.65);
+  }
+
+  return scene.add.container(0, 0, parts);
+}
+
 export class GameRenderer {
   private objects: RenderObjects | null = null;
   private lastNoiseRippleAtMs = Number.NEGATIVE_INFINITY;
@@ -668,16 +725,13 @@ export class GameRenderer {
       }
 
       const existing = objects.setDressingObjects.get(object.id);
-      const rectangle =
-        existing && !("list" in existing)
+      const prop =
+        existing && "list" in existing
           ? existing
-          : scene.add.rectangle(object.x, object.y, object.width, object.height, setDressingFill(object.kind), setDressingAlpha(object.kind));
-      rectangle.setPosition(object.x, object.y);
-      rectangle.setSize(object.width, object.height);
-      rectangle.setFillStyle(setDressingFill(object.kind), setDressingAlpha(object.kind));
-      rectangle.setStrokeStyle(2, setDressingStroke(object.kind), 0.7);
-      rectangle.setDepth(2);
-      objects.setDressingObjects.set(object.id, rectangle);
+          : createSetDressingSprite(scene, object.kind, object.width, object.height);
+      prop.setPosition(object.x, object.y);
+      prop.setDepth(3);
+      objects.setDressingObjects.set(object.id, prop);
     }
 
     for (const pebble of descriptors.pebbles) {
