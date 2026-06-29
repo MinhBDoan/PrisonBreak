@@ -60,6 +60,7 @@ export type GuardDescriptor = EntityDescriptor & {
   hiddenBody: boolean;
   health: GuardStateSnapshot["health"];
   suspicion: number;
+  spriteFacingX: 1 | -1;
   visual: CharacterVisualDescriptor;
   visionCone: VisionConeDescriptor | null;
 };
@@ -200,6 +201,10 @@ function guardCone(guard: GuardStateSnapshot): VisionConeDescriptor | null {
         ? 0.2 + clamp01(captureProgress) * 0.12
         : 0.18,
   };
+}
+
+function spriteFacingX(facing: Vector): 1 | -1 {
+  return facing.x < 0 ? -1 : 1;
 }
 
 function setDressingFill(kind: SetDressingKind): number {
@@ -560,6 +565,7 @@ export class GameRenderer {
         hiddenBody: Boolean(guard.bodyHiddenIn),
         health: guard.health ? { ...guard.health } : undefined,
         suspicion: guard.suspicion,
+        spriteFacingX: spriteFacingX(guard.facing),
         visual: guardVisual(),
         visionCone: guardCone(guard),
       })),
@@ -894,7 +900,8 @@ export class GameRenderer {
       container.setVisible(!guard.hiddenBody);
       container.setAlpha(guard.bodyState === "active" ? (guard.state === "search" ? 0.88 : 1) : 0.68);
       container.setRotation(guard.bodyState === "dead" ? Math.PI / 2 : guard.bodyState === "knocked_out" ? -Math.PI / 2 : 0);
-      container.setScale(guard.dragging ? 0.92 : 1);
+      const guardScale = guard.dragging ? 0.92 : 1;
+      container.setScale(guard.spriteFacingX * guardScale, guardScale);
 
       let cone = objects.guardCones.get(guard.id);
       if (!cone) {

@@ -155,6 +155,22 @@ describe("GameRenderer", () => {
     expect(prisoners.every((object) => object.visual?.role === "prisoner")).toBe(true);
   });
 
+  it("describes guard sprite facing so dog guards can look toward patrol direction", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [
+        { id: "guard-left", position: { x: 18.5, y: 5.5 }, facing: { x: -1, y: 0 } },
+        { id: "guard-right", position: { x: 20.5, y: 5.5 }, facing: { x: 1, y: 0 } },
+      ],
+    });
+
+    const guards = new GameRenderer().describe(simulation.getSnapshot()).guards;
+
+    expect(guards).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "guard-left", spriteFacingX: -1 }),
+      expect.objectContaining({ id: "guard-right", spriteFacingX: 1 }),
+    ]));
+  });
+
   it("creates character containers for prisoner dressing instead of flat rectangles", () => {
     const renderer = new GameRenderer();
     const createdContainers: Array<{ depth: number | null; scale: number | null }> = [];
