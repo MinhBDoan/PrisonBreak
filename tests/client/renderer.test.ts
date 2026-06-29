@@ -681,12 +681,13 @@ describe("GameRenderer", () => {
 
   it("mounts room identity details over the base tile map", () => {
     const renderer = new GameRenderer();
-    const rectangles: Array<{ alpha?: number; fillColor?: number; strokeColor?: number }> = [];
+    const rectangles: Array<{ alpha?: number; fillColor?: number; strokeAlpha?: number; strokeColor?: number }> = [];
     const circles: Array<{ alpha?: number; fillColor?: number }> = [];
     const rectangle = {
       setOrigin: () => rectangle,
-      setStrokeStyle: (_lineWidth: number, strokeColor: number) => {
+      setStrokeStyle: (_lineWidth: number, strokeColor: number, strokeAlpha?: number) => {
         rectangles[rectangles.length - 1].strokeColor = strokeColor;
+        rectangles[rectangles.length - 1].strokeAlpha = strokeAlpha;
         return rectangle;
       },
       setBlendMode: () => rectangle,
@@ -725,6 +726,8 @@ describe("GameRenderer", () => {
     expect(rectangles.some((rect) => rect.fillColor === 0x6a7d8f && rect.alpha === 0.5)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0x05090e && rect.alpha === 0.48)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0x2a3642 && rect.alpha === 0.24)).toBe(true);
+    expect(rectangles.some((rect) => rect.strokeColor === 0x405568 && rect.strokeAlpha === 0.78)).toBe(true);
+    expect(rectangles.some((rect) => rect.strokeColor === 0x314252 && rect.strokeAlpha === 0.18)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0xffd166 && rect.alpha === 0.36)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0x75e1ff && rect.alpha === 0.42)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0xff5f56 && rect.alpha === 0.46)).toBe(true);
