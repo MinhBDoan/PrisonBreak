@@ -106,7 +106,7 @@ export const prisonMap: PrisonMap = {
     { id: "storage_supply_shelf", kind: "supply_shelf", position: { x: 16.2, y: 7.85 }, width: 0.62, height: 0.38 },
     { id: "storage_floor_labels", kind: "floor_label", position: { x: 14.15, y: 7.9 }, width: 0.7, height: 0.12 },
     { id: "storage_supply_boxes", kind: "supply_boxes", position: { x: 15.75, y: 6.75 }, width: 0.52, height: 0.28 },
-    { id: "storage_bandage_marker", kind: "supply_marker", position: { x: 13.4, y: 7.68 }, width: 0.5, height: 0.12 },
+    { id: "storage_bandage_marker", kind: "supply_marker", position: { x: 13.46, y: 7.68 }, width: 0.5, height: 0.12 },
     { id: "exit_floor_chevrons", kind: "exit_marker", position: { x: 23.8, y: 9.5 }, width: 0.9, height: 0.22 },
     { id: "security_wall_panel", kind: "control_panel", position: { x: 18.55, y: 1.75 }, width: 0.5, height: 0.34 },
     { id: "security_camera_marker", kind: "camera_marker", position: { x: 23.25, y: 2.95 }, width: 0.32, height: 0.24 },

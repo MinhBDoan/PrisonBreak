@@ -176,6 +176,28 @@ describe("GameSimulation", () => {
     for (const object of prisonMap.setDressingObjects) {
       expect(solidIds.has(object.id)).toBe(false);
       expect(isWall(prisonMap, object.position)).toBe(false);
+      if (object.kind !== "bars") {
+        const overlappingCoverIds = prisonMap.coverObjects
+          .filter((coverObject) => {
+            const objectLeft = object.position.x - object.width / 2;
+            const objectRight = object.position.x + object.width / 2;
+            const objectTop = object.position.y - object.height / 2;
+            const objectBottom = object.position.y + object.height / 2;
+            const coverLeft = coverObject.position.x - coverObject.width / 2;
+            const coverRight = coverObject.position.x + coverObject.width / 2;
+            const coverTop = coverObject.position.y - coverObject.height / 2;
+            const coverBottom = coverObject.position.y + coverObject.height / 2;
+
+            return (
+              objectRight > coverLeft &&
+              objectLeft < coverRight &&
+              objectBottom > coverTop &&
+              objectTop < coverBottom
+            );
+          })
+          .map((coverObject) => coverObject.id);
+        expect(overlappingCoverIds, object.id).toEqual([]);
+      }
     }
   });
 
