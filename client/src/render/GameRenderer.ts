@@ -733,6 +733,15 @@ function addRoomDetails(scene: Phaser.Scene): Array<Phaser.GameObjects.Rectangle
   for (const y of [5.02, 6.98, 8.98]) {
     addRect(16.5, y, 15.0, 0.05, 0x465b6c, 0.22, 0);
   }
+  for (const y of [4.5, 6.5, 8.5]) {
+    addRect(16.5, y, 15.0, 0.06, 0x425566, 0.3, 1);
+  }
+  for (const x of [10.5, 14.5, 18.5, 22.5]) {
+    addRect(x, 5.5, 0.72, 0.05, 0xffd166, 0.2, 1);
+    addRect(x, 9.5, 0.72, 0.05, 0xffd166, 0.18, 1);
+  }
+  addRect(9.0, 4.02, 16.0, 0.08, 0x0b1118, 0.5, 2);
+  addRect(17.0, 4.02, 0.08, 7.0, 0x0b1118, 0.42, 2);
   for (const x of [2.2, 4.9, 7.4]) {
     addRect(x, 1.42, 0.34, 0.05, 0x8b5f3c, 0.22, 1);
     addRect(x + 0.28, 1.58, 0.22, 0.04, 0x6a7d8f, 0.18, 1);
