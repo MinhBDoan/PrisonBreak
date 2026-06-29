@@ -589,16 +589,23 @@ function createSetDressingSprite(
     addPart(width * 0.28, -height * 0.46, width * 0.1, Math.max(4, height * 0.18), 0x91a8b6, 0xf0f6fa, 0.72);
   } else if (kind === "desk") {
     addPart(0, 0, width, height, 0x4d3f34, 0x9b7459, 0.96);
-    addPart(-width * 0.26, height * 0.18, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
-    addPart(width * 0.26, height * 0.18, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
+    addPart(0, -height * 0.24, width * 0.86, Math.max(5, height * 0.18), 0x173142, 0x6bd3ff, 0.88);
+    addPart(-width * 0.26, height * 0.2, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
+    addPart(width * 0.26, height * 0.2, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
+    addPart(-width * 0.18, -height * 0.3, width * 0.16, Math.max(4, height * 0.16), 0x75e1ff, 0xd7f7ff, 0.82);
+    addPart(width * 0.18, -height * 0.3, width * 0.16, Math.max(4, height * 0.16), 0xff5f56, 0xffb3b0, 0.82);
   } else if (kind === "monitor") {
     addPart(0, 0, width, Math.max(10, height), 0x173142, 0x6bd3ff, 0.96);
-    addPart(-width * 0.2, 0, width * 0.18, Math.max(5, height * 0.55), 0x75e1ff, 0xd7f7ff, 0.9);
-    addPart(width * 0.18, 0, width * 0.22, Math.max(5, height * 0.55), 0x2bc3ff, 0xd7f7ff, 0.88);
+    addPart(-width * 0.32, 0, width * 0.18, Math.max(6, height * 0.62), 0x75e1ff, 0xd7f7ff, 0.9);
+    addPart(-width * 0.08, 0, width * 0.18, Math.max(6, height * 0.62), 0x2bc3ff, 0xd7f7ff, 0.88);
+    addPart(width * 0.16, 0, width * 0.18, Math.max(6, height * 0.62), 0x75e1ff, 0xd7f7ff, 0.78);
+    addPart(width * 0.38, 0, width * 0.08, Math.max(5, height * 0.55), 0xff5f56, 0xffb3b0, 0.78);
   } else if (kind === "weapon_rack") {
     addPart(0, 0, width, Math.max(8, height), 0x3d4650, 0x8b929a, 0.96);
-    addPart(-width * 0.22, -height * 0.1, width * 0.12, height + 14, 0xc7d1db, 0xffd166, 0.96).setRotation(-0.28);
-    addPart(width * 0.18, -height * 0.05, width * 0.12, height + 14, 0xaab5bf, 0xffd166, 0.96).setRotation(0.22);
+    addPart(-width * 0.32, -height * 0.1, width * 0.1, height + 18, 0xc7d1db, 0xffd166, 0.96).setRotation(-0.32);
+    addPart(0, -height * 0.06, width * 0.1, height + 18, 0xaab5bf, 0xffd166, 0.96).setRotation(0.18);
+    addPart(width * 0.28, -height * 0.06, width * 0.1, height + 16, 0x8090a0, 0xffd166, 0.94).setRotation(0.36);
+    addPart(-width * 0.08, height * 0.34, width * 0.82, Math.max(4, height * 0.18), 0xffd166, 0xfff0b8, 0.7);
   } else if (kind === "supply_shelf") {
     addPart(0, 0, width, height, 0x5f4938, 0xb28b63, 0.92);
     addPart(-width * 0.24, -height * 0.16, width * 0.22, height * 0.24, 0xd6a04f, 0xffd166, 0.94);
@@ -616,14 +623,17 @@ function createSetDressingSprite(
     addPart(width * 0.24, 0, width * 0.12, height * 1.5, 0x263341, 0xfff0b8, 0.72);
   } else if (kind === "control_panel") {
     addPart(0, 0, width, height, 0x173142, 0x6bd3ff, 0.94);
-    addPart(-width * 0.22, -height * 0.08, width * 0.2, height * 0.28, 0x75e1ff, 0xd7f7ff, 0.9);
-    addPart(width * 0.08, -height * 0.08, width * 0.16, height * 0.22, 0x2bc3ff, 0xd7f7ff, 0.88);
+    addPart(-width * 0.24, -height * 0.1, width * 0.2, height * 0.3, 0x75e1ff, 0xd7f7ff, 0.9);
+    addPart(0, -height * 0.1, width * 0.16, height * 0.24, 0x2bc3ff, 0xd7f7ff, 0.88);
+    addPart(width * 0.24, -height * 0.1, width * 0.12, height * 0.2, 0x75e1ff, 0xd7f7ff, 0.76);
     addPart(width * 0.28, height * 0.22, width * 0.12, height * 0.12, 0xff5f56, 0xffb3b0, 0.92);
+    addPart(-width * 0.28, height * 0.22, width * 0.12, height * 0.12, 0xffd166, 0xfff0b8, 0.86);
   } else if (kind === "camera_marker") {
     addPart(0, 0, width, height, 0x3d4650, 0xd5dde5, 0.94);
-    addPart(width * 0.16, 0, width * 0.34, height * 0.52, 0x111820, 0x6bd3ff, 0.96);
-    addPart(-width * 0.28, -height * 0.2, width * 0.16, height * 0.2, 0x8b929a, 0xd5dde5, 0.9);
-    addPart(-width * 0.32, height * 0.24, width * 0.18, height * 0.18, 0x6bd3ff, 0xd7f7ff, 0.78);
+    addPart(width * 0.16, 0, width * 0.36, height * 0.54, 0x111820, 0x6bd3ff, 0.96);
+    addPart(-width * 0.28, -height * 0.2, width * 0.18, height * 0.2, 0x8b929a, 0xd5dde5, 0.9);
+    addPart(-width * 0.36, height * 0.22, width * 0.2, height * 0.2, 0x6bd3ff, 0xd7f7ff, 0.78);
+    addPart(width * 0.38, height * 0.18, width * 0.16, height * 0.16, 0xff5f56, 0xffb3b0, 0.7);
   } else if (kind === "status_lights") {
     addPart(0, 0, width, height, 0x173142, 0x6bd3ff, 0.86);
     addPart(-width * 0.26, 0, width * 0.12, height * 1.35, 0x6bd3ff, 0xd7f7ff, 0.9);

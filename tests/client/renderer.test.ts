@@ -402,6 +402,22 @@ describe("GameRenderer", () => {
     expect(props.find((prop) => prop.id === "starter_cell_toilet")?.fillColors).toEqual(expect.arrayContaining([0xe9f1f6, 0x91a8b6]));
   });
 
+  it("renders security props as control-room silhouettes", () => {
+    const props = captureSetDressingRender([
+      "security_desk",
+      "security_monitor_bank",
+      "security_weapon_rack",
+      "security_wall_panel",
+      "security_camera_marker",
+    ]);
+
+    expect(props.find((prop) => prop.id === "security_desk")?.childCount).toBeGreaterThanOrEqual(6);
+    expect(props.find((prop) => prop.id === "security_monitor_bank")?.childCount).toBeGreaterThanOrEqual(5);
+    expect(props.find((prop) => prop.id === "security_weapon_rack")?.childCount).toBeGreaterThanOrEqual(5);
+    expect(props.find((prop) => prop.id === "security_wall_panel")?.fillColors).toEqual(expect.arrayContaining([0x75e1ff, 0xff5f56]));
+    expect(props.find((prop) => prop.id === "security_camera_marker")?.fillColors).toEqual(expect.arrayContaining([0x111820, 0x6bd3ff]));
+  });
+
   it("renders storage and security identity props as multi-part pixel containers", () => {
     const renderer = new GameRenderer();
     const renderedProps: Array<{ id: string; childCount: number }> = [];
