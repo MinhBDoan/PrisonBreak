@@ -569,17 +569,26 @@ function createSetDressingSprite(
     const matrixParts: Phaser.GameObjects.Rectangle[] = [];
 
     sprite.rows.forEach((row, rowIndex) => {
-      [...row.padEnd(columnCount, ".")].forEach((token, columnIndex) => {
+      const tokens = [...row.padEnd(columnCount, ".")];
+      let columnIndex = 0;
+      while (columnIndex < tokens.length) {
+        const token = tokens[columnIndex] as PixelToken;
         if (token === ".") {
-          return;
+          columnIndex += 1;
+          continue;
         }
 
-        const painted = token as PaintedPixelToken;
+        let runLength = 1;
+        while (tokens[columnIndex + runLength] === token) {
+          runLength += 1;
+        }
+
+        const painted = token;
         const part = addPixelRect(
           scene,
-          xStart + columnIndex * pixelSize,
+          xStart + columnIndex * pixelSize + ((runLength - 1) * pixelSize) / 2,
           yStart + rowIndex * pixelSize,
-          pixelSize,
+          pixelSize * runLength,
           pixelSize,
           sprite.palette[painted],
           sprite.alpha?.[painted] ?? 1,
@@ -588,7 +597,8 @@ function createSetDressingSprite(
           part.setStrokeStyle(1, 0x0b1118, painted === "O" ? 0.92 : 0.42);
         }
         matrixParts.push(part);
-      });
+        columnIndex += runLength;
+      }
     });
 
     return scene.add.container(0, 0, matrixParts);
