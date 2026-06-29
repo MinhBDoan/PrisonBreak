@@ -418,6 +418,24 @@ describe("GameRenderer", () => {
     expect(props.find((prop) => prop.id === "security_camera_marker")?.fillColors).toEqual(expect.arrayContaining([0x111820, 0x6bd3ff]));
   });
 
+  it("renders storage and route markers with stronger object silhouettes", () => {
+    const props = captureSetDressingRender([
+      "storage_supply_shelf",
+      "storage_supply_boxes",
+      "storage_bandage_marker",
+      "central_corridor_floor_stripe",
+      "east_corridor_signage",
+      "exit_floor_chevrons",
+    ]);
+
+    expect(props.find((prop) => prop.id === "storage_supply_shelf")?.childCount).toBeGreaterThanOrEqual(7);
+    expect(props.find((prop) => prop.id === "storage_supply_boxes")?.childCount).toBeGreaterThanOrEqual(6);
+    expect(props.find((prop) => prop.id === "storage_bandage_marker")?.fillColors).toEqual(expect.arrayContaining([0xcfffd5, 0x72d18b]));
+    expect(props.find((prop) => prop.id === "central_corridor_floor_stripe")?.childCount).toBeGreaterThanOrEqual(5);
+    expect(props.find((prop) => prop.id === "east_corridor_signage")?.fillColors).toEqual(expect.arrayContaining([0x173142, 0xffd166]));
+    expect(props.find((prop) => prop.id === "exit_floor_chevrons")?.childCount).toBeGreaterThanOrEqual(4);
+  });
+
   it("renders storage and security identity props as multi-part pixel containers", () => {
     const renderer = new GameRenderer();
     const renderedProps: Array<{ id: string; childCount: number }> = [];
