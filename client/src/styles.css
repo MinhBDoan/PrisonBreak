@@ -38,12 +38,12 @@ body {
   left: 24px;
   top: 22px;
   width: min(340px, calc(100vw - 48px));
-  padding: 16px 18px;
-  border: 1px solid rgba(155, 190, 215, 0.22);
-  border-radius: 16px;
-  background: rgba(7, 15, 23, 0.68);
-  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(10px);
+  padding: 13px 15px;
+  border: 1px solid rgba(155, 190, 215, 0.18);
+  border-radius: 12px;
+  background: rgba(7, 15, 23, 0.56);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(6px);
 }
 
 .hud__panel--right {
@@ -184,17 +184,17 @@ body {
 .hud__equipment {
   position: absolute;
   left: 50%;
-  bottom: 22px;
+  bottom: 16px;
   display: grid;
   grid-template-columns: repeat(5, minmax(108px, 1fr));
-  gap: 8px;
-  width: min(760px, calc(100vw - 32px));
-  padding: 8px;
-  border: 1px solid rgba(155, 190, 215, 0.2);
-  border-radius: 14px;
-  background: rgba(7, 15, 23, 0.72);
-  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(10px);
+  gap: 7px;
+  width: min(720px, calc(100vw - 28px));
+  padding: 7px;
+  border: 1px solid rgba(155, 190, 215, 0.17);
+  border-radius: 12px;
+  background: rgba(7, 15, 23, 0.6);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(6px);
   transform: translateX(-50%);
 }
 

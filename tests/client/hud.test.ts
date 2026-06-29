@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
 import { prisonMap } from "../../client/src/game/map";
@@ -216,5 +217,22 @@ describe("createHudModel", () => {
     expect(root.innerHTML).toContain("General");
     expect(root.innerHTML).toContain("Master");
     expect(root.innerHTML).toContain("hud__key-chip--owned");
+  });
+
+  it("keeps HUD information while reducing overlay weight over the playfield", () => {
+    const css = readFileSync("client/src/styles.css", "utf8");
+    const root = {
+      innerHTML: "",
+      classList: { add() {} },
+    } as HTMLElement;
+
+    new Hud(root).update(new GameSimulation().getSnapshot());
+
+    expect(root.innerHTML).toContain("Find the master key");
+    expect(root.innerHTML).toContain('aria-label="Equipment"');
+    expect(css).toContain("background: rgba(7, 15, 23, 0.56);");
+    expect(css).toContain("background: rgba(7, 15, 23, 0.6);");
+    expect(css).toContain("padding: 13px 15px;");
+    expect(css).toContain("bottom: 16px;");
   });
 });
