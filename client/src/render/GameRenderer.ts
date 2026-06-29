@@ -15,6 +15,7 @@ import type {
 export const renderScale = 64;
 const noiseRippleCooldownMs = 500;
 const pebbleThrowRange = 4;
+const npcPrisonerSpriteScale = 0.78;
 
 export type VisionConeDescriptor = {
   x: number;
@@ -324,8 +325,13 @@ function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescript
   const hasMask = visual.species === "raccoon";
   const skinColor = visual.species === "possum" ? 0xb8aeb6 : visual.species === "cat" ? 0xb9946b : 0x8d9bab;
   const tailColor = visual.species === "possum" ? 0xd2b7c0 : visual.species === "cat" ? 0x9b7654 : 0x6f7d8d;
+  const earHeight = visual.species === "cat" ? 10 : visual.species === "possum" ? 9 : 7;
+  const earWidth = visual.species === "cat" ? 7 : 6;
+  const snoutColor = visual.species === "possum" ? 0xe0c7cf : visual.species === "cat" ? 0xd7b58d : 0xb5c1ca;
+  const tailHeight = visual.species === "possum" ? 24 : visual.species === "cat" ? 21 : 18;
+  const tailRotation = visual.species === "cat" ? -0.12 : -0.3;
   const shadow = scene.add.ellipse(0, 17, 30, 10, 0x081018, 0.24);
-  const tail = addPixelRect(scene, -14, 6, 7, 18, tailColor).setRotation(-0.3);
+  const tail = addPixelRect(scene, -14, 6, 7, tailHeight, tailColor).setRotation(tailRotation);
   tail.setStrokeStyle(2, visual.outlineColor, 0.9);
   const legLeft = addPixelRect(scene, -5, 21, 6, 10, 0x172231);
   const legRight = addPixelRect(scene, 5, 21, 6, 10, 0x172231);
@@ -338,10 +344,10 @@ function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescript
   const playerMark = visual.playerHighlight ? addPixelRect(scene, 0, -28, 12, 3, visual.accentColor, 0.98) : null;
   const head = addPixelRect(scene, 0, -15, 20, 17, skinColor);
   head.setStrokeStyle(2, visual.outlineColor, 0.96);
-  const earLeft = addPixelRect(scene, -7, -26, 6, 7, skinColor);
-  const earRight = addPixelRect(scene, 7, -26, 6, 7, skinColor);
+  const earLeft = addPixelRect(scene, -7, -26, earWidth, earHeight, skinColor);
+  const earRight = addPixelRect(scene, 7, -26, earWidth, earHeight, skinColor);
   const mask = hasMask ? addPixelRect(scene, 0, -17, 18, 5, 0x202a36) : null;
-  const snout = addPixelRect(scene, 0, -11, 8, 4, 0xb5c1ca);
+  const snout = addPixelRect(scene, visual.species === "possum" ? 1 : 0, -11, visual.species === "possum" ? 10 : 8, 4, snoutColor);
   const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0xf8fbff);
   const eyeRight = addPixelRect(scene, 4, -17, 2, 2, 0xf8fbff);
 
@@ -391,9 +397,10 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
   const badge = addPixelRect(scene, 7, 1, 4, 5, 0xffd166);
   const head = addPixelRect(scene, 0, -16, 21, 18, skinColor);
   head.setStrokeStyle(2, visual.outlineColor, 0.96);
-  const earLeft = addPixelRect(scene, -8, -27, 6, 10, skinColor);
-  const earRight = addPixelRect(scene, 8, -27, 6, 10, skinColor);
-  const muzzle = addPixelRect(scene, 0, -11, 10, 5, muzzleColor);
+  const earLeft = addPixelRect(scene, -9, -25, 6, 13, skinColor).setRotation(-0.18);
+  const earRight = addPixelRect(scene, 9, -25, 6, 13, skinColor).setRotation(0.18);
+  const muzzle = addPixelRect(scene, 0, -10, 13, 6, muzzleColor);
+  const nose = addPixelRect(scene, 0, -13, 5, 3, 0x191411);
   const cap = addPixelRect(scene, 0, -26, 21, 5, visual.accentColor);
   cap.setStrokeStyle(2, visual.outlineColor, 0.9);
   const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0x101820);
@@ -415,6 +422,7 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
     earLeft,
     earRight,
     muzzle,
+    nose,
     cap,
     eyeLeft,
     eyeRight,
@@ -653,7 +661,7 @@ export class GameRenderer {
             ? existing
             : createPlayerSprite(scene, object.visual);
         container.setPosition(object.x, object.y);
-        container.setScale(0.48);
+        container.setScale(npcPrisonerSpriteScale);
         container.setDepth(5);
         objects.setDressingObjects.set(object.id, container);
         continue;
