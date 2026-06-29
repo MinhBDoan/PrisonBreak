@@ -479,7 +479,19 @@ describe("GameRenderer", () => {
       { id: "exit_floor_chevrons", childCount: expect.any(Number) },
       { id: "security_camera_sweep_marks", childCount: expect.any(Number) },
     ]));
-    expect(renderedProps.every((prop) => prop.childCount >= 2)).toBe(true);
+    const expectedMinimumChildCounts = new Map([
+      ["starter_cell_wall_marks", 3],
+      ["prisoner_cell_a_shadow", 2],
+      ["central_corridor_floor_stripe", 3],
+      ["east_corridor_signage", 3],
+      ["storage_bandage_marker", 3],
+      ["exit_floor_chevrons", 3],
+      ["security_camera_sweep_marks", 3],
+    ]);
+
+    for (const prop of renderedProps) {
+      expect(prop.childCount).toBeGreaterThanOrEqual(expectedMinimumChildCounts.get(prop.id) ?? 3);
+    }
   });
 
   it("destroys old guard sprite parts when facing changes to a different silhouette", () => {
