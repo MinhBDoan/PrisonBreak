@@ -161,6 +161,7 @@ describe("GameRenderer", () => {
       guardOverrides: [
         { id: "guard-left", position: { x: 18.5, y: 5.5 }, facing: { x: -1, y: 0 } },
         { id: "guard-right", position: { x: 20.5, y: 5.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-down", position: { x: 22.5, y: 5.5 }, facing: { x: 0, y: 1 } },
       ],
     });
 
@@ -170,7 +171,9 @@ describe("GameRenderer", () => {
       expect.objectContaining({ id: "guard-left", spriteFacingX: -1 }),
       expect.objectContaining({ id: "guard-right", spriteFacingX: 1 }),
     ]));
-    expect(guards.every((guard) => guard.visual.silhouette === "side_profile")).toBe(true);
+    expect(guards.find((guard) => guard.id === "guard-left")?.visual.silhouette).toBe("side_profile");
+    expect(guards.find((guard) => guard.id === "guard-right")?.visual.silhouette).toBe("side_profile");
+    expect(guards.find((guard) => guard.id === "guard-down")?.visual.silhouette).toBe("front");
   });
 
   it("creates character containers for prisoner dressing instead of flat rectangles", () => {

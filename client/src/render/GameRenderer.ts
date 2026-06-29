@@ -112,6 +112,7 @@ type RenderObjects = {
   roomDetails: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Arc>;
   player?: Phaser.GameObjects.Container;
   guards: Map<string, Phaser.GameObjects.Container>;
+  guardSilhouettes: Map<string, CharacterVisualDescriptor["silhouette"]>;
   guardCones: Map<string, Phaser.GameObjects.Graphics>;
   hidingSpots: Map<string, Phaser.GameObjects.Rectangle>;
   coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
@@ -285,13 +286,17 @@ function playerVisual(): CharacterVisualDescriptor {
   };
 }
 
-function guardVisual(): CharacterVisualDescriptor {
+function guardSilhouette(facing: Vector): CharacterVisualDescriptor["silhouette"] {
+  return facing.y > 0 && Math.abs(facing.y) >= Math.abs(facing.x) ? "front" : "side_profile";
+}
+
+function guardVisual(facing: Vector): CharacterVisualDescriptor {
   return {
     artStyle: "pixel_tactics",
     variant: "readable_hybrid",
     species: "dog",
     role: "guard",
-    silhouette: "side_profile",
+    silhouette: guardSilhouette(facing),
     uniformColor: 0x234f86,
     accentColor: 0xc7d1db,
     outlineColor: 0x101820,
@@ -392,6 +397,54 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
   const skinColor = visual.species === "dog" ? 0xa87955 : 0xd8894d;
   const tailColor = visual.species === "dog" ? 0x7a563d : 0xc36a38;
   const muzzleColor = visual.species === "dog" ? 0xd7b08d : 0xf3b37b;
+  if (visual.silhouette === "front") {
+    const shadow = scene.add.ellipse(0, 18, 32, 11, 0x081018, 0.28);
+    const tail = addPixelRect(scene, 15, 7, 7, 20, tailColor).setRotation(0.32);
+    tail.setStrokeStyle(2, visual.outlineColor, 0.9);
+    const legLeft = addPixelRect(scene, -6, 23, 7, 10, 0x1c2633);
+    const legRight = addPixelRect(scene, 6, 23, 7, 10, 0x1c2633);
+    const armLeft = addPixelRect(scene, -15, 6, 6, 19, skinColor);
+    const armRight = addPixelRect(scene, 15, 6, 6, 19, skinColor);
+    const baton = addPixelRect(scene, 20, 8, 4, 20, 0xc7d1db).setRotation(-0.22);
+    const body = addPixelRect(scene, 0, 6, 24, 28, visual.uniformColor);
+    body.setStrokeStyle(2, visual.outlineColor, 0.96);
+    const shirt = addPixelRect(scene, 0, 0, 16, 8, visual.accentColor, 1);
+    const belt = addPixelRect(scene, 0, 11, 23, 4, visual.accentColor);
+    const badge = addPixelRect(scene, 7, 1, 4, 5, 0xffd166);
+    const head = addPixelRect(scene, 0, -16, 21, 18, skinColor);
+    head.setStrokeStyle(2, visual.outlineColor, 0.96);
+    const earLeft = addPixelRect(scene, -9, -25, 6, 13, skinColor).setRotation(-0.18);
+    const earRight = addPixelRect(scene, 9, -25, 6, 13, skinColor).setRotation(0.18);
+    const muzzle = addPixelRect(scene, 0, -10, 13, 6, muzzleColor);
+    const nose = addPixelRect(scene, 0, -13, 5, 3, 0x191411);
+    const cap = addPixelRect(scene, 0, -26, 21, 5, visual.accentColor);
+    cap.setStrokeStyle(2, visual.outlineColor, 0.9);
+    const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0x101820);
+    const eyeRight = addPixelRect(scene, 4, -17, 2, 2, 0x101820);
+
+    return scene.add.container(0, 0, [
+      shadow,
+      tail,
+      legLeft,
+      legRight,
+      armLeft,
+      armRight,
+      baton,
+      body,
+      shirt,
+      belt,
+      badge,
+      head,
+      earLeft,
+      earRight,
+      muzzle,
+      nose,
+      cap,
+      eyeLeft,
+      eyeRight,
+    ]);
+  }
+
   const shadow = scene.add.ellipse(0, 18, 32, 11, 0x081018, 0.28);
   const tail = addPixelRect(scene, -16, 8, 7, 19, tailColor).setRotation(-0.42);
   tail.setStrokeStyle(2, visual.outlineColor, 0.9);
@@ -570,7 +623,7 @@ export class GameRenderer {
         health: guard.health ? { ...guard.health } : undefined,
         suspicion: guard.suspicion,
         spriteFacingX: spriteFacingX(guard.facing),
-        visual: guardVisual(),
+        visual: guardVisual(guard.facing),
         visionCone: guardCone(guard),
       })),
       hidingSpots: prisonMap.hidingSpots.map((spot) => ({
@@ -713,6 +766,7 @@ export class GameRenderer {
       lights,
       roomDetails,
       guards: new Map(),
+      guardSilhouettes: new Map(),
       guardCones: new Map(),
       hidingSpots: new Map(),
       coverObjects: new Map(),
@@ -895,10 +949,17 @@ export class GameRenderer {
     for (const guard of descriptors.guards) {
       liveGuardIds.add(guard.id);
       let container = objects.guards.get(guard.id);
+      if (container && objects.guardSilhouettes.get(guard.id) !== guard.visual.silhouette) {
+        container.destroy();
+        objects.guards.delete(guard.id);
+        objects.guardSilhouettes.delete(guard.id);
+        container = undefined;
+      }
       if (!container) {
         container = createGuardSprite(scene, guard.visual);
         container.setDepth(18);
         objects.guards.set(guard.id, container);
+        objects.guardSilhouettes.set(guard.id, guard.visual.silhouette);
       }
       container.setPosition(guard.x, guard.y);
       container.setVisible(!guard.hiddenBody);
@@ -932,6 +993,7 @@ export class GameRenderer {
       if (!liveGuardIds.has(id)) {
         container.destroy();
         objects.guards.delete(id);
+        objects.guardSilhouettes.delete(id);
         objects.guardCones.get(id)?.destroy();
         objects.guardCones.delete(id);
       }
