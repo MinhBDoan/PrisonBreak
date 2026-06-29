@@ -896,20 +896,20 @@ export class GameRenderer {
             tileCenterY,
             renderScale,
             renderScale,
-            isWall ? 0x111820 : 0x263341,
+            isWall ? 0x0d141c : 0x23313d,
           )
-          .setStrokeStyle(1, isWall ? 0x334151 : 0x34495c, isWall ? 0.75 : 0.25);
+          .setStrokeStyle(1, isWall ? 0x405568 : 0x314252, isWall ? 0.78 : 0.18);
         if (isWall) {
           walls.push(rect);
           walls.push(
             scene.add
-              .rectangle(tileCenterX, world(y + 0.16), renderScale, world(0.14), 0x526171, 0.52)
+              .rectangle(tileCenterX, world(y + 0.16), renderScale, world(0.14), 0x6a7d8f, 0.5)
               .setDepth(2),
           );
           if (prisonMap.tiles[y + 1]?.[x] !== "#") {
             walls.push(
               scene.add
-                .rectangle(tileCenterX, world(y + 0.92), renderScale, world(0.16), 0x071018, 0.42)
+                .rectangle(tileCenterX, world(y + 0.92), renderScale, world(0.16), 0x05090e, 0.48)
                 .setDepth(2),
             );
           }
@@ -923,8 +923,8 @@ export class GameRenderer {
                   tileCenterY - world(0.14),
                   world(0.42),
                   world(0.05),
-                  0x2d3a47,
-                  0.34,
+                  0x2a3642,
+                  0.24,
                 )
                 .setDepth(1),
             );

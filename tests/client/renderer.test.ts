@@ -720,9 +720,11 @@ describe("GameRenderer", () => {
     expect(rectangles.some((rect) => rect.fillColor === 0x3a2f25 && rect.alpha === 0.36)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0x0e2a3a && rect.alpha === 0.34)).toBe(true);
     expect(rectangles.some((rect) => rect.strokeColor === 0x465b6c)).toBe(true);
-    expect(rectangles.some((rect) => rect.fillColor === 0x526171 && rect.alpha === 0.52)).toBe(true);
-    expect(rectangles.some((rect) => rect.fillColor === 0x071018 && rect.alpha === 0.42)).toBe(true);
-    expect(rectangles.some((rect) => rect.fillColor === 0x2d3a47 && rect.alpha === 0.34)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x0d141c)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x23313d)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x6a7d8f && rect.alpha === 0.5)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x05090e && rect.alpha === 0.48)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x2a3642 && rect.alpha === 0.24)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0xffd166 && rect.alpha === 0.36)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0x75e1ff && rect.alpha === 0.42)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0xff5f56 && rect.alpha === 0.46)).toBe(true);
