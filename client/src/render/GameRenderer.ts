@@ -33,14 +33,17 @@ export type EntityDescriptor = {
   y: number;
 };
 
+export type CharacterSpecies = "raccoon" | "dog" | "cat" | "possum";
+
 export type CharacterVisualDescriptor = {
   artStyle: "pixel_tactics";
   variant: "readable_hybrid";
-  species: "raccoon" | "fox";
+  species: CharacterSpecies;
   role: "prisoner" | "guard";
   uniformColor: number;
   accentColor: number;
   outlineColor: number;
+  playerHighlight: boolean;
 };
 
 export type KeyVisualDescriptor = {
@@ -65,7 +68,15 @@ export type RenderDescriptors = {
   guards: GuardDescriptor[];
   hidingSpots: Array<EntityDescriptor & { type: HidingSpot["type"]; bodyOccupied: boolean }>;
   coverObjects: Array<EntityDescriptor & { width: number; height: number }>;
-  setDressingObjects: Array<{ id: string; kind: SetDressingKind; x: number; y: number; width: number; height: number }>;
+  setDressingObjects: Array<{
+    id: string;
+    kind: SetDressingKind;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    visual: CharacterVisualDescriptor | null;
+  }>;
   pebbles: Array<EntityDescriptor & { collected: boolean }>;
   weaponPickups: Array<EntityDescriptor & { collected: boolean; weaponId: WeaponPickup["weaponId"] }>;
   healingPickups: Array<EntityDescriptor & { collected: boolean; amount: HealingPickup["amount"] }>;
@@ -100,7 +111,7 @@ type RenderObjects = {
   guardCones: Map<string, Phaser.GameObjects.Graphics>;
   hidingSpots: Map<string, Phaser.GameObjects.Rectangle>;
   coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
-  setDressingObjects: Map<string, Phaser.GameObjects.Rectangle>;
+  setDressingObjects: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Container>;
   pebbles: Map<string, Phaser.GameObjects.Arc>;
   weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
   healingPickups: Map<string, Phaser.GameObjects.Rectangle>;
@@ -258,9 +269,10 @@ function playerVisual(): CharacterVisualDescriptor {
     variant: "readable_hybrid",
     species: "raccoon",
     role: "prisoner",
-    uniformColor: 0x3d6fb7,
-    accentColor: 0xd9e6ef,
+    uniformColor: 0xf28c38,
+    accentColor: 0xffd166,
     outlineColor: 0x0b1118,
+    playerHighlight: true,
   };
 }
 
@@ -268,11 +280,31 @@ function guardVisual(): CharacterVisualDescriptor {
   return {
     artStyle: "pixel_tactics",
     variant: "readable_hybrid",
-    species: "fox",
+    species: "dog",
     role: "guard",
-    uniformColor: 0xe28a3f,
-    accentColor: 0x243040,
-    outlineColor: 0x111820,
+    uniformColor: 0x234f86,
+    accentColor: 0xc7d1db,
+    outlineColor: 0x101820,
+    playerHighlight: false,
+  };
+}
+
+const npcPrisonerSpecies: CharacterSpecies[] = ["raccoon", "cat", "possum"];
+
+function stableSpeciesIndex(id: string): number {
+  return [...id].reduce((sum, character) => sum + character.charCodeAt(0), 0) % npcPrisonerSpecies.length;
+}
+
+function npcPrisonerVisual(id: string): CharacterVisualDescriptor {
+  return {
+    artStyle: "pixel_tactics",
+    variant: "readable_hybrid",
+    species: npcPrisonerSpecies[stableSpeciesIndex(id)],
+    role: "prisoner",
+    uniformColor: 0xf28c38,
+    accentColor: 0xffd166,
+    outlineColor: 0x0b1118,
+    playerHighlight: false,
   };
 }
 
@@ -289,27 +321,31 @@ function addPixelRect(
 }
 
 function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
+  const hasMask = visual.species === "raccoon";
+  const skinColor = visual.species === "possum" ? 0xb8aeb6 : visual.species === "cat" ? 0xb9946b : 0x8d9bab;
+  const tailColor = visual.species === "possum" ? 0xd2b7c0 : visual.species === "cat" ? 0x9b7654 : 0x6f7d8d;
   const shadow = scene.add.ellipse(0, 17, 30, 10, 0x081018, 0.24);
-  const tail = addPixelRect(scene, -14, 6, 7, 18, 0x6f7d8d).setRotation(-0.3);
+  const tail = addPixelRect(scene, -14, 6, 7, 18, tailColor).setRotation(-0.3);
   tail.setStrokeStyle(2, visual.outlineColor, 0.9);
   const legLeft = addPixelRect(scene, -5, 21, 6, 10, 0x172231);
   const legRight = addPixelRect(scene, 5, 21, 6, 10, 0x172231);
-  const armLeft = addPixelRect(scene, -13, 5, 5, 18, 0x8d9bab);
-  const armRight = addPixelRect(scene, 13, 5, 5, 18, 0x8d9bab);
+  const armLeft = addPixelRect(scene, -13, 5, 5, 18, skinColor);
+  const armRight = addPixelRect(scene, 13, 5, 5, 18, skinColor);
   const body = addPixelRect(scene, 0, 5, 21, 26, visual.uniformColor);
   body.setStrokeStyle(2, visual.outlineColor, 0.96);
   const stripeA = addPixelRect(scene, 0, -1, 17, 3, visual.accentColor, 0.95);
   const stripeB = addPixelRect(scene, 0, 8, 17, 3, visual.accentColor, 0.95);
-  const head = addPixelRect(scene, 0, -15, 20, 17, 0x8d9bab);
+  const playerMark = visual.playerHighlight ? addPixelRect(scene, 0, -28, 12, 3, visual.accentColor, 0.98) : null;
+  const head = addPixelRect(scene, 0, -15, 20, 17, skinColor);
   head.setStrokeStyle(2, visual.outlineColor, 0.96);
-  const earLeft = addPixelRect(scene, -7, -26, 6, 7, 0x8d9bab);
-  const earRight = addPixelRect(scene, 7, -26, 6, 7, 0x8d9bab);
-  const mask = addPixelRect(scene, 0, -17, 18, 5, 0x202a36);
+  const earLeft = addPixelRect(scene, -7, -26, 6, 7, skinColor);
+  const earRight = addPixelRect(scene, 7, -26, 6, 7, skinColor);
+  const mask = hasMask ? addPixelRect(scene, 0, -17, 18, 5, 0x202a36) : null;
   const snout = addPixelRect(scene, 0, -11, 8, 4, 0xb5c1ca);
   const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0xf8fbff);
   const eyeRight = addPixelRect(scene, 4, -17, 2, 2, 0xf8fbff);
 
-  return scene.add.container(0, 0, [
+  const parts = [
     shadow,
     tail,
     legLeft,
@@ -322,32 +358,42 @@ function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescript
     head,
     earLeft,
     earRight,
-    mask,
     snout,
     eyeLeft,
     eyeRight,
-  ]);
+  ];
+  if (mask) {
+    parts.push(mask);
+  }
+  if (playerMark) {
+    parts.push(playerMark);
+  }
+
+  return scene.add.container(0, 0, parts);
 }
 
 function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
+  const skinColor = visual.species === "dog" ? 0xa87955 : 0xd8894d;
+  const tailColor = visual.species === "dog" ? 0x7a563d : 0xc36a38;
+  const muzzleColor = visual.species === "dog" ? 0xd7b08d : 0xf3b37b;
   const shadow = scene.add.ellipse(0, 18, 32, 11, 0x081018, 0.28);
-  const tail = addPixelRect(scene, 15, 7, 7, 20, 0xc36a38).setRotation(0.32);
+  const tail = addPixelRect(scene, 15, 7, 7, 20, tailColor).setRotation(0.32);
   tail.setStrokeStyle(2, visual.outlineColor, 0.9);
   const legLeft = addPixelRect(scene, -6, 23, 7, 10, 0x1c2633);
   const legRight = addPixelRect(scene, 6, 23, 7, 10, 0x1c2633);
-  const armLeft = addPixelRect(scene, -15, 6, 6, 19, 0xd8894d);
-  const armRight = addPixelRect(scene, 15, 6, 6, 19, 0xd8894d);
+  const armLeft = addPixelRect(scene, -15, 6, 6, 19, skinColor);
+  const armRight = addPixelRect(scene, 15, 6, 6, 19, skinColor);
   const baton = addPixelRect(scene, 20, 8, 4, 20, 0xc7d1db).setRotation(-0.22);
   const body = addPixelRect(scene, 0, 6, 24, 28, visual.uniformColor);
   body.setStrokeStyle(2, visual.outlineColor, 0.96);
-  const shirt = addPixelRect(scene, 0, 0, 16, 8, 0xf0b15f, 1);
+  const shirt = addPixelRect(scene, 0, 0, 16, 8, visual.accentColor, 1);
   const belt = addPixelRect(scene, 0, 11, 23, 4, visual.accentColor);
   const badge = addPixelRect(scene, 7, 1, 4, 5, 0xffd166);
-  const head = addPixelRect(scene, 0, -16, 21, 18, 0xd8894d);
+  const head = addPixelRect(scene, 0, -16, 21, 18, skinColor);
   head.setStrokeStyle(2, visual.outlineColor, 0.96);
-  const earLeft = addPixelRect(scene, -8, -27, 6, 10, 0xd8894d);
-  const earRight = addPixelRect(scene, 8, -27, 6, 10, 0xd8894d);
-  const muzzle = addPixelRect(scene, 0, -11, 10, 5, 0xf3b37b);
+  const earLeft = addPixelRect(scene, -8, -27, 6, 10, skinColor);
+  const earRight = addPixelRect(scene, 8, -27, 6, 10, skinColor);
+  const muzzle = addPixelRect(scene, 0, -11, 10, 5, muzzleColor);
   const cap = addPixelRect(scene, 0, -26, 21, 5, visual.accentColor);
   cap.setStrokeStyle(2, visual.outlineColor, 0.9);
   const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0x101820);
@@ -426,6 +472,7 @@ export class GameRenderer {
         y: world(object.position.y),
         width: world(object.width),
         height: world(object.height),
+        visual: object.kind === "prisoner" ? npcPrisonerVisual(object.id) : null,
       })),
       pebbles: snapshot.pebbles.map((pebble) => ({
         id: pebble.id,
@@ -599,15 +646,30 @@ export class GameRenderer {
     }
 
     for (const object of descriptors.setDressingObjects) {
-      const existing =
-        objects.setDressingObjects.get(object.id) ??
-        scene.add.rectangle(object.x, object.y, object.width, object.height, setDressingFill(object.kind), setDressingAlpha(object.kind));
-      existing.setPosition(object.x, object.y);
-      existing.setSize(object.width, object.height);
-      existing.setFillStyle(setDressingFill(object.kind), setDressingAlpha(object.kind));
-      existing.setStrokeStyle(2, setDressingStroke(object.kind), 0.7);
-      existing.setDepth(2);
-      objects.setDressingObjects.set(object.id, existing);
+      if (object.visual) {
+        const existing = objects.setDressingObjects.get(object.id);
+        const container =
+          existing && "list" in existing
+            ? existing
+            : createPlayerSprite(scene, object.visual);
+        container.setPosition(object.x, object.y);
+        container.setScale(0.48);
+        container.setDepth(5);
+        objects.setDressingObjects.set(object.id, container);
+        continue;
+      }
+
+      const existing = objects.setDressingObjects.get(object.id);
+      const rectangle =
+        existing && !("list" in existing)
+          ? existing
+          : scene.add.rectangle(object.x, object.y, object.width, object.height, setDressingFill(object.kind), setDressingAlpha(object.kind));
+      rectangle.setPosition(object.x, object.y);
+      rectangle.setSize(object.width, object.height);
+      rectangle.setFillStyle(setDressingFill(object.kind), setDressingAlpha(object.kind));
+      rectangle.setStrokeStyle(2, setDressingStroke(object.kind), 0.7);
+      rectangle.setDepth(2);
+      objects.setDressingObjects.set(object.id, rectangle);
     }
 
     for (const pebble of descriptors.pebbles) {

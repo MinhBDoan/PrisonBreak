@@ -27,6 +27,8 @@ describe("GameRenderer", () => {
         variant: "readable_hybrid",
         species: "raccoon",
         role: "prisoner",
+        uniformColor: 0xf28c38,
+        playerHighlight: true,
       }),
     });
     expect(descriptors.guards).toEqual(expect.arrayContaining([
@@ -37,9 +39,9 @@ describe("GameRenderer", () => {
         visual: expect.objectContaining({
           artStyle: "pixel_tactics",
           variant: "readable_hybrid",
-          species: "fox",
+          species: "dog",
           role: "guard",
-          uniformColor: 0xe28a3f,
+          uniformColor: 0x234f86,
         }),
         visionCone: expect.objectContaining({
           color: 0xffc857,
@@ -74,11 +76,31 @@ describe("GameRenderer", () => {
     ]);
     expect(descriptors.hidingSpots.some((spot) => spot.bodyOccupied)).toBe(false);
     expect(descriptors.setDressingObjects).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "starter_cell_bars", kind: "bars" }),
-      expect.objectContaining({ id: "starter_cell_cot", kind: "cot" }),
-      expect.objectContaining({ id: "starter_cell_toilet", kind: "toilet" }),
-      expect.objectContaining({ id: "prisoner_cell_a_prisoner", kind: "prisoner" }),
-      expect.objectContaining({ id: "prisoner_cell_b_prisoner", kind: "prisoner" }),
+      expect.objectContaining({ id: "starter_cell_bars", kind: "bars", visual: null }),
+      expect.objectContaining({ id: "starter_cell_cot", kind: "cot", visual: null }),
+      expect.objectContaining({ id: "starter_cell_toilet", kind: "toilet", visual: null }),
+      expect.objectContaining({
+        id: "prisoner_cell_a_prisoner",
+        kind: "prisoner",
+        visual: expect.objectContaining({
+          artStyle: "pixel_tactics",
+          variant: "readable_hybrid",
+          role: "prisoner",
+          uniformColor: 0xf28c38,
+          playerHighlight: false,
+        }),
+      }),
+      expect.objectContaining({
+        id: "prisoner_cell_b_prisoner",
+        kind: "prisoner",
+        visual: expect.objectContaining({
+          artStyle: "pixel_tactics",
+          variant: "readable_hybrid",
+          role: "prisoner",
+          uniformColor: 0xf28c38,
+          playerHighlight: false,
+        }),
+      }),
     ]));
     expect(descriptors.coverObjects).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -121,6 +143,71 @@ describe("GameRenderer", () => {
     expect(descriptors.objectives.key.color).toBe(0x57d7ff);
     expect(descriptors.objectives.key.strokeColor).toBe(0xd7f7ff);
     expect(descriptors.objectives.exit.id).toBe("locked_exit");
+  });
+
+  it("assigns deterministic animal variants to NPC prisoner dressing", () => {
+    const descriptors = new GameRenderer().describe(new GameSimulation().getSnapshot());
+
+    const prisoners = descriptors.setDressingObjects.filter((object) => object.kind === "prisoner");
+
+    expect(prisoners.map((object) => object.visual?.species)).toEqual(["raccoon", "cat"]);
+    expect(prisoners.every((object) => object.visual?.uniformColor === 0xf28c38)).toBe(true);
+    expect(prisoners.every((object) => object.visual?.role === "prisoner")).toBe(true);
+  });
+
+  it("creates character containers for prisoner dressing instead of flat rectangles", () => {
+    const renderer = new GameRenderer();
+    const createdContainers: unknown[] = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const container = {
+            list: children,
+            setPosition: () => container,
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          createdContainers.push(container);
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    expect(createdContainers.length).toBeGreaterThanOrEqual(6);
   });
 
   it("swings player-opened doors away from the player around a hinge edge", () => {
