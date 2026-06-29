@@ -41,6 +41,7 @@ export type CharacterVisualDescriptor = {
   variant: "readable_hybrid";
   species: CharacterSpecies;
   role: "prisoner" | "guard";
+  silhouette: "front" | "side_profile";
   uniformColor: number;
   accentColor: number;
   outlineColor: number;
@@ -276,6 +277,7 @@ function playerVisual(): CharacterVisualDescriptor {
     variant: "readable_hybrid",
     species: "raccoon",
     role: "prisoner",
+    silhouette: "front",
     uniformColor: 0xf28c38,
     accentColor: 0xffd166,
     outlineColor: 0x0b1118,
@@ -289,6 +291,7 @@ function guardVisual(): CharacterVisualDescriptor {
     variant: "readable_hybrid",
     species: "dog",
     role: "guard",
+    silhouette: "side_profile",
     uniformColor: 0x234f86,
     accentColor: 0xc7d1db,
     outlineColor: 0x101820,
@@ -308,6 +311,7 @@ function npcPrisonerVisual(id: string): CharacterVisualDescriptor {
     variant: "readable_hybrid",
     species: npcPrisonerSpecies[stableSpeciesIndex(id)],
     role: "prisoner",
+    silhouette: "front",
     uniformColor: 0xf28c38,
     accentColor: 0xffd166,
     outlineColor: 0x0b1118,
@@ -389,49 +393,49 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
   const tailColor = visual.species === "dog" ? 0x7a563d : 0xc36a38;
   const muzzleColor = visual.species === "dog" ? 0xd7b08d : 0xf3b37b;
   const shadow = scene.add.ellipse(0, 18, 32, 11, 0x081018, 0.28);
-  const tail = addPixelRect(scene, 15, 7, 7, 20, tailColor).setRotation(0.32);
+  const tail = addPixelRect(scene, -16, 8, 7, 19, tailColor).setRotation(-0.42);
   tail.setStrokeStyle(2, visual.outlineColor, 0.9);
   const legLeft = addPixelRect(scene, -6, 23, 7, 10, 0x1c2633);
   const legRight = addPixelRect(scene, 6, 23, 7, 10, 0x1c2633);
-  const armLeft = addPixelRect(scene, -15, 6, 6, 19, skinColor);
-  const armRight = addPixelRect(scene, 15, 6, 6, 19, skinColor);
-  const baton = addPixelRect(scene, 20, 8, 4, 20, 0xc7d1db).setRotation(-0.22);
-  const body = addPixelRect(scene, 0, 6, 24, 28, visual.uniformColor);
+  const armBack = addPixelRect(scene, -10, 6, 5, 18, skinColor).setRotation(0.08);
+  const armFront = addPixelRect(scene, 13, 6, 6, 20, skinColor).setRotation(-0.14);
+  const baton = addPixelRect(scene, 19, 9, 4, 22, 0xc7d1db).setRotation(-0.32);
+  const body = addPixelRect(scene, 1, 6, 23, 28, visual.uniformColor);
   body.setStrokeStyle(2, visual.outlineColor, 0.96);
-  const shirt = addPixelRect(scene, 0, 0, 16, 8, visual.accentColor, 1);
-  const belt = addPixelRect(scene, 0, 11, 23, 4, visual.accentColor);
-  const badge = addPixelRect(scene, 7, 1, 4, 5, 0xffd166);
-  const head = addPixelRect(scene, 0, -16, 21, 18, skinColor);
+  const shirt = addPixelRect(scene, 4, 0, 14, 8, visual.accentColor, 1);
+  const belt = addPixelRect(scene, 1, 11, 22, 4, visual.accentColor);
+  const badge = addPixelRect(scene, 9, 1, 4, 5, 0xffd166);
+  const neck = addPixelRect(scene, -2, -5, 8, 8, skinColor);
+  const head = addPixelRect(scene, 3, -17, 19, 17, skinColor);
   head.setStrokeStyle(2, visual.outlineColor, 0.96);
-  const earLeft = addPixelRect(scene, -9, -25, 6, 13, skinColor).setRotation(-0.18);
-  const earRight = addPixelRect(scene, 9, -25, 6, 13, skinColor).setRotation(0.18);
-  const muzzle = addPixelRect(scene, 0, -10, 13, 6, muzzleColor);
-  const nose = addPixelRect(scene, 0, -13, 5, 3, 0x191411);
-  const cap = addPixelRect(scene, 0, -26, 21, 5, visual.accentColor);
+  const earBack = addPixelRect(scene, -3, -27, 6, 11, skinColor).setRotation(-0.18);
+  const earFront = addPixelRect(scene, 8, -27, 6, 14, skinColor).setRotation(0.22);
+  const muzzle = addPixelRect(scene, 13, -13, 15, 7, muzzleColor);
+  const nose = addPixelRect(scene, 21, -14, 5, 3, 0x191411);
+  const cap = addPixelRect(scene, 5, -27, 20, 5, visual.accentColor);
   cap.setStrokeStyle(2, visual.outlineColor, 0.9);
-  const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0x101820);
-  const eyeRight = addPixelRect(scene, 4, -17, 2, 2, 0x101820);
+  const eye = addPixelRect(scene, 10, -18, 2, 2, 0x101820);
 
   return scene.add.container(0, 0, [
     shadow,
     tail,
     legLeft,
     legRight,
-    armLeft,
-    armRight,
+    armBack,
+    armFront,
     baton,
     body,
     shirt,
     belt,
     badge,
+    neck,
     head,
-    earLeft,
-    earRight,
+    earBack,
+    earFront,
     muzzle,
     nose,
     cap,
-    eyeLeft,
-    eyeRight,
+    eye,
   ]);
 }
 

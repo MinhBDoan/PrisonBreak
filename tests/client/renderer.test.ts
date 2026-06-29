@@ -41,6 +41,7 @@ describe("GameRenderer", () => {
           variant: "readable_hybrid",
           species: "dog",
           role: "guard",
+          silhouette: "side_profile",
           uniformColor: 0x234f86,
         }),
         visionCone: expect.objectContaining({
@@ -169,6 +170,7 @@ describe("GameRenderer", () => {
       expect.objectContaining({ id: "guard-left", spriteFacingX: -1 }),
       expect.objectContaining({ id: "guard-right", spriteFacingX: 1 }),
     ]));
+    expect(guards.every((guard) => guard.visual.silhouette === "side_profile")).toBe(true);
   });
 
   it("creates character containers for prisoner dressing instead of flat rectangles", () => {
