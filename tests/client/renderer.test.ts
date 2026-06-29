@@ -607,6 +607,10 @@ describe("GameRenderer", () => {
     expect(rectangles.some((rect) => rect.fillColor === 0xffd166 && rect.alpha === 0.36)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0x75e1ff && rect.alpha === 0.42)).toBe(true);
     expect(rectangles.some((rect) => rect.fillColor === 0xff5f56 && rect.alpha === 0.46)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x8b5f3c && rect.alpha === 0.22)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x6a7d8f && rect.alpha === 0.26)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x57d7ff && rect.alpha === 0.28)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0xcfffd5 && rect.alpha === 0.18)).toBe(true);
     expect(circles.some((light) => light.fillColor === 0x6bd3ff)).toBe(true);
     expect(circles.some((light) => light.fillColor === 0xffd166)).toBe(true);
   });
