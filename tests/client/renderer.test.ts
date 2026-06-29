@@ -396,8 +396,12 @@ describe("GameRenderer", () => {
       expect.objectContaining({ id: "starter_cell_toilet", childCount: expect.any(Number) }),
     ]));
     expect(props.find((prop) => prop.id === "starter_cell_bars")?.childCount).toBeGreaterThanOrEqual(7);
+    expect(props.find((prop) => prop.id === "starter_cell_bars")?.childCount).toBe(39);
+    expect(props.find((prop) => prop.id === "starter_cell_bars")?.fillColors).toEqual(expect.arrayContaining([0x0b1118, 0xb8c6d1]));
     expect(props.find((prop) => prop.id === "starter_cell_cot")?.childCount).toBeGreaterThanOrEqual(6);
+    expect(props.find((prop) => prop.id === "starter_cell_cot")?.childCount).toBe(76);
     expect(props.find((prop) => prop.id === "starter_cell_toilet")?.childCount).toBeGreaterThanOrEqual(5);
+    expect(props.find((prop) => prop.id === "starter_cell_toilet")?.childCount).toBe(45);
     expect(props.find((prop) => prop.id === "starter_cell_cot")?.fillColors).toEqual(expect.arrayContaining([0xd6dde4, 0x2d3b49, 0x7f93a8]));
     expect(props.find((prop) => prop.id === "starter_cell_toilet")?.fillColors).toEqual(expect.arrayContaining([0xe9f1f6, 0x91a8b6]));
   });
@@ -413,7 +417,11 @@ describe("GameRenderer", () => {
 
     expect(props.find((prop) => prop.id === "security_desk")?.childCount).toBeGreaterThanOrEqual(6);
     expect(props.find((prop) => prop.id === "security_monitor_bank")?.childCount).toBeGreaterThanOrEqual(5);
+    expect(props.find((prop) => prop.id === "security_monitor_bank")?.childCount).toBe(64);
     expect(props.find((prop) => prop.id === "security_weapon_rack")?.childCount).toBeGreaterThanOrEqual(5);
+    expect(props.find((prop) => prop.id === "security_weapon_rack")?.childCount).toBe(55);
+    expect(props.find((prop) => prop.id === "security_monitor_bank")?.fillColors).toEqual(expect.arrayContaining([0x173142, 0x75e1ff, 0xff5f56]));
+    expect(props.find((prop) => prop.id === "security_weapon_rack")?.fillColors).toEqual(expect.arrayContaining([0x3d4650, 0xc7d1db, 0xffd166]));
     expect(props.find((prop) => prop.id === "security_wall_panel")?.fillColors).toEqual(expect.arrayContaining([0x75e1ff, 0xff5f56]));
     expect(props.find((prop) => prop.id === "security_camera_marker")?.fillColors).toEqual(expect.arrayContaining([0x111820, 0x6bd3ff]));
   });
@@ -429,11 +437,17 @@ describe("GameRenderer", () => {
     ]);
 
     expect(props.find((prop) => prop.id === "storage_supply_shelf")?.childCount).toBeGreaterThanOrEqual(7);
+    expect(props.find((prop) => prop.id === "storage_supply_shelf")?.childCount).toBe(73);
+    expect(props.find((prop) => prop.id === "storage_supply_shelf")?.fillColors).toEqual(expect.arrayContaining([0x5f4938, 0xd6a04f, 0x566b7f, 0xcfffd5]));
     expect(props.find((prop) => prop.id === "storage_supply_boxes")?.childCount).toBeGreaterThanOrEqual(6);
+    expect(props.find((prop) => prop.id === "storage_supply_boxes")?.childCount).toBe(53);
+    expect(props.find((prop) => prop.id === "storage_supply_boxes")?.fillColors).toEqual(expect.arrayContaining([0xd6a04f, 0xb28b63, 0x8b5f3c, 0xffefb0]));
     expect(props.find((prop) => prop.id === "storage_bandage_marker")?.fillColors).toEqual(expect.arrayContaining([0xcfffd5, 0x72d18b]));
     expect(props.find((prop) => prop.id === "central_corridor_floor_stripe")?.childCount).toBeGreaterThanOrEqual(5);
     expect(props.find((prop) => prop.id === "east_corridor_signage")?.fillColors).toEqual(expect.arrayContaining([0x173142, 0xffd166]));
     expect(props.find((prop) => prop.id === "exit_floor_chevrons")?.childCount).toBeGreaterThanOrEqual(4);
+    expect(props.find((prop) => prop.id === "exit_floor_chevrons")?.childCount).toBe(28);
+    expect(props.find((prop) => prop.id === "exit_floor_chevrons")?.fillColors).toEqual(expect.arrayContaining([0x57d7ff, 0xd7f7ff]));
   });
 
   it("renders storage and security identity props as multi-part pixel containers", () => {

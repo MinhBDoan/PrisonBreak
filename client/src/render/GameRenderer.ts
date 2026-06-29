@@ -378,6 +378,15 @@ function addPixelRect(
   return scene.add.rectangle(x, y, width, height, color, alpha).setOrigin(0.5);
 }
 
+type PixelToken = "." | "O" | "M" | "D" | "F" | "G" | "W" | "S" | "H";
+type PaintedPixelToken = Exclude<PixelToken, ".">;
+
+type PixelMatrixSprite = {
+  rows: readonly string[];
+  palette: Record<PaintedPixelToken, number>;
+  alpha?: Partial<Record<PaintedPixelToken, number>>;
+};
+
 function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
   const hasMask = visual.species === "raccoon";
   const skinColor = visual.species === "possum" ? 0xb8aeb6 : visual.species === "cat" ? 0xb9946b : 0x8d9bab;
@@ -549,6 +558,42 @@ function createSetDressingSprite(
   width: number,
   height: number,
 ): Phaser.GameObjects.Container {
+  const createPixelMatrixSprite = (sprite: PixelMatrixSprite): Phaser.GameObjects.Container => {
+    const rowCount = sprite.rows.length;
+    const columnCount = Math.max(...sprite.rows.map((row) => row.length));
+    const pixelSize = Math.max(1, Math.floor(Math.min(width / columnCount, height / rowCount)));
+    const totalWidth = columnCount * pixelSize;
+    const totalHeight = rowCount * pixelSize;
+    const xStart = -totalWidth / 2 + pixelSize / 2;
+    const yStart = -totalHeight / 2 + pixelSize / 2;
+    const matrixParts: Phaser.GameObjects.Rectangle[] = [];
+
+    sprite.rows.forEach((row, rowIndex) => {
+      [...row.padEnd(columnCount, ".")].forEach((token, columnIndex) => {
+        if (token === ".") {
+          return;
+        }
+
+        const painted = token as PaintedPixelToken;
+        const part = addPixelRect(
+          scene,
+          xStart + columnIndex * pixelSize,
+          yStart + rowIndex * pixelSize,
+          pixelSize,
+          pixelSize,
+          sprite.palette[painted],
+          sprite.alpha?.[painted] ?? 1,
+        );
+        if (painted === "O" || painted === "M" || painted === "S") {
+          part.setStrokeStyle(1, 0x0b1118, painted === "O" ? 0.92 : 0.42);
+        }
+        matrixParts.push(part);
+      });
+    });
+
+    return scene.add.container(0, 0, matrixParts);
+  };
+
   const parts: Phaser.GameObjects.Rectangle[] = [];
   const addPart = (
     x: number,
@@ -566,27 +611,73 @@ function createSetDressingSprite(
   };
 
   if (kind === "bars") {
-    const barCount = Math.max(5, Math.floor(width / 10));
-    addPart(0, 0, width, Math.max(5, height), 0x263341, 0x9aa7b4, 0.82);
-    addPart(0, -Math.max(11, height + 8), width, 4, 0x0b1118, 0x9aa7b4, 0.86);
-    addPart(0, Math.max(11, height + 8), width, 4, 0x0b1118, 0x9aa7b4, 0.78);
-    for (let index = 0; index < barCount; index += 1) {
-      const x = -width / 2 + ((index + 0.5) * width) / barCount;
-      addPart(x, 0, 5, Math.max(24, height + 22), 0xb8c6d1, 0xe2e8ef, 0.96);
-    }
+    return createPixelMatrixSprite({
+      rows: [
+        "OOOOOOOOOOOO",
+        ".M.M.M.M.M..",
+        ".M.M.M.M.M..",
+        ".M.M.M.M.M..",
+        "OOOOOOOOOOOO",
+      ],
+      palette: {
+        O: 0x0b1118,
+        M: 0xb8c6d1,
+        D: 0x263341,
+        F: 0x2d3b49,
+        G: 0x75e1ff,
+        W: 0xffd166,
+        S: 0x111820,
+        H: 0xe2e8ef,
+      },
+    });
   } else if (kind === "cot") {
-    addPart(0, 0, width, height, 0x3e5364, 0x7f93a8, 0.96);
-    addPart(-width * 0.32, -height * 0.18, width * 0.3, height * 0.46, 0xd6dde4, 0xf0f6fa, 0.98);
-    addPart(width * 0.14, height * 0.06, width * 0.66, height * 0.58, 0x2d3b49, 0x6a7d8f, 0.96);
-    addPart(width * 0.14, -height * 0.22, width * 0.6, Math.max(4, height * 0.16), 0x7f93a8, 0xd5dde5, 0.9);
-    addPart(-width * 0.42, height * 0.34, width * 0.1, Math.max(5, height * 0.35), 0x111820, 0x465b6c, 0.88);
-    addPart(width * 0.42, height * 0.34, width * 0.1, Math.max(5, height * 0.35), 0x111820, 0x465b6c, 0.88);
+    return createPixelMatrixSprite({
+      rows: [
+        "OOOOOOOOOOOO",
+        "OMHHHMMMMMMO",
+        "OMHHHFFFFFFO",
+        "OMHHHFFFFFFO",
+        "OMMMMFFFFFFO",
+        "OSSSSSSSSSSO",
+        "..S......S..",
+        "..S......S..",
+      ],
+      palette: {
+        O: 0x111820,
+        M: 0x7f93a8,
+        D: 0x3e5364,
+        F: 0x2d3b49,
+        G: 0x75e1ff,
+        W: 0xffd166,
+        S: 0x111820,
+        H: 0xd6dde4,
+      },
+      alpha: { S: 0.88 },
+    });
   } else if (kind === "toilet") {
-    addPart(0, 3, width * 0.82, height * 0.66, 0xc8d3dc, 0xf0f6fa, 0.98);
-    addPart(0, -height * 0.3, width * 0.62, height * 0.34, 0xe9f1f6, 0xffffff, 0.98);
-    addPart(0, 4, width * 0.36, height * 0.22, 0x91a8b6, 0xf0f6fa, 0.86);
-    addPart(-width * 0.28, height * 0.32, width * 0.14, Math.max(4, height * 0.2), 0x7f93a8, 0xf0f6fa, 0.74);
-    addPart(width * 0.28, -height * 0.46, width * 0.1, Math.max(4, height * 0.18), 0x91a8b6, 0xf0f6fa, 0.72);
+    return createPixelMatrixSprite({
+      rows: [
+        "..OOOO...",
+        "..OHHHO..",
+        "..OMMMO..",
+        ".OOHHHOO.",
+        "OHHMMMHO.",
+        "OHMMSMHO.",
+        ".OSSSSO..",
+        "..O..O...",
+      ],
+      palette: {
+        O: 0x7f93a8,
+        M: 0x91a8b6,
+        D: 0xc8d3dc,
+        F: 0x2d3b49,
+        G: 0x75e1ff,
+        W: 0xffd166,
+        S: 0x111820,
+        H: 0xe9f1f6,
+      },
+      alpha: { S: 0.72 },
+    });
   } else if (kind === "desk") {
     addPart(0, 0, width, height, 0x4d3f34, 0x9b7459, 0.96);
     addPart(0, -height * 0.24, width * 0.86, Math.max(5, height * 0.18), 0x173142, 0x6bd3ff, 0.88);
@@ -595,33 +686,98 @@ function createSetDressingSprite(
     addPart(-width * 0.18, -height * 0.3, width * 0.16, Math.max(4, height * 0.16), 0x75e1ff, 0xd7f7ff, 0.82);
     addPart(width * 0.18, -height * 0.3, width * 0.16, Math.max(4, height * 0.16), 0xff5f56, 0xffb3b0, 0.82);
   } else if (kind === "monitor") {
-    addPart(0, 0, width, Math.max(10, height), 0x173142, 0x6bd3ff, 0.96);
-    addPart(-width * 0.32, 0, width * 0.18, Math.max(6, height * 0.62), 0x75e1ff, 0xd7f7ff, 0.9);
-    addPart(-width * 0.08, 0, width * 0.18, Math.max(6, height * 0.62), 0x2bc3ff, 0xd7f7ff, 0.88);
-    addPart(width * 0.16, 0, width * 0.18, Math.max(6, height * 0.62), 0x75e1ff, 0xd7f7ff, 0.78);
-    addPart(width * 0.38, 0, width * 0.08, Math.max(5, height * 0.55), 0xff5f56, 0xffb3b0, 0.78);
+    return createPixelMatrixSprite({
+      rows: [
+        "OOOOOOOOOOOO",
+        "OGGGODDDOWWO",
+        "OGGGODDDOWWO",
+        "OGGGOGGGO..O",
+        "OOOOOOOOOOOO",
+        "...SSSSSS...",
+      ],
+      palette: {
+        O: 0x173142,
+        M: 0x3d4650,
+        D: 0x2bc3ff,
+        F: 0x2d3b49,
+        G: 0x75e1ff,
+        W: 0xff5f56,
+        S: 0x111820,
+        H: 0xd7f7ff,
+      },
+      alpha: { G: 0.9, D: 0.86, W: 0.82 },
+    });
   } else if (kind === "weapon_rack") {
-    addPart(0, 0, width, Math.max(8, height), 0x3d4650, 0x8b929a, 0.96);
-    addPart(-width * 0.32, -height * 0.1, width * 0.1, height + 18, 0xc7d1db, 0xffd166, 0.96).setRotation(-0.32);
-    addPart(0, -height * 0.06, width * 0.1, height + 18, 0xaab5bf, 0xffd166, 0.96).setRotation(0.18);
-    addPart(width * 0.28, -height * 0.06, width * 0.1, height + 16, 0x8090a0, 0xffd166, 0.94).setRotation(0.36);
-    addPart(-width * 0.08, height * 0.34, width * 0.82, Math.max(4, height * 0.18), 0xffd166, 0xfff0b8, 0.7);
+    return createPixelMatrixSprite({
+      rows: [
+        "OOOOOOOOOOO",
+        "O..M..M..O.",
+        "O.M.M.M.MO.",
+        "O.MMMWMMMO.",
+        "OWWWWWWWWO.",
+        "O..S..S..O.",
+        "OOOOOOOOOOO",
+      ],
+      palette: {
+        O: 0x3d4650,
+        M: 0xc7d1db,
+        D: 0x8090a0,
+        F: 0x2d3b49,
+        G: 0x75e1ff,
+        W: 0xffd166,
+        S: 0x111820,
+        H: 0xfff0b8,
+      },
+      alpha: { W: 0.76 },
+    });
   } else if (kind === "supply_shelf") {
-    addPart(0, 0, width, height, 0x5f4938, 0xb28b63, 0.92);
-    addPart(-width * 0.42, 0, width * 0.08, height * 1.06, 0x2f2721, 0xb28b63, 0.9);
-    addPart(width * 0.42, 0, width * 0.08, height * 1.06, 0x2f2721, 0xb28b63, 0.9);
-    addPart(0, -height * 0.18, width * 0.82, Math.max(4, height * 0.12), 0x2f2721, 0x9b7459, 0.9);
-    addPart(0, height * 0.22, width * 0.82, Math.max(4, height * 0.12), 0x2f2721, 0x9b7459, 0.9);
-    addPart(-width * 0.22, -height * 0.28, width * 0.22, height * 0.24, 0xd6a04f, 0xffd166, 0.94);
-    addPart(width * 0.18, -height * 0.26, width * 0.28, height * 0.2, 0x566b7f, 0x90a9bf, 0.94);
-    addPart(width * 0.04, height * 0.12, width * 0.18, height * 0.18, 0xcfffd5, 0x72d18b, 0.78);
+    return createPixelMatrixSprite({
+      rows: [
+        "OOOOOOOOOOOO",
+        "OM..W..D..MO",
+        "OMMMMMMMMMMO",
+        "OM..F..H..MO",
+        "OMMMMMMMMMMO",
+        "OM.WWW.DD.MO",
+        "OM........MO",
+        "OOOOOOOOOOOO",
+      ],
+      palette: {
+        O: 0x5f4938,
+        M: 0x2f2721,
+        D: 0x566b7f,
+        F: 0xcfffd5,
+        G: 0x75e1ff,
+        W: 0xd6a04f,
+        S: 0x111820,
+        H: 0xcfffd5,
+      },
+      alpha: { F: 0.78, H: 0.72 },
+    });
   } else if (kind === "supply_boxes") {
-    addPart(-width * 0.22, height * 0.08, width * 0.42, height * 0.62, 0xd6a04f, 0xffd166, 0.94);
-    addPart(width * 0.18, -height * 0.08, width * 0.36, height * 0.52, 0xb28b63, 0xffd166, 0.92);
-    addPart(width * 0.02, height * 0.24, width * 0.34, height * 0.38, 0x8b5f3c, 0xffd166, 0.88);
-    addPart(-width * 0.22, -height * 0.16, width * 0.3, Math.max(4, height * 0.12), 0xffefb0, 0xffd166, 0.78);
-    addPart(width * 0.2, -height * 0.28, width * 0.22, Math.max(4, height * 0.1), 0x566b7f, 0x90a9bf, 0.9);
-    addPart(width * 0.02, height * 0.04, width * 0.18, Math.max(4, height * 0.1), 0xffefb0, 0xffd166, 0.72);
+    return createPixelMatrixSprite({
+      rows: [
+        "..OOOOO....",
+        ".OHHHHO....",
+        ".OWWWWO....",
+        "OOOODDDOO..",
+        "OWWWWDDDO..",
+        "OFFFFOO....",
+        "OFFHFO.....",
+        "OOOOO......",
+      ],
+      palette: {
+        O: 0x8b5f3c,
+        M: 0x5f4938,
+        D: 0xb28b63,
+        F: 0xd6a04f,
+        G: 0x75e1ff,
+        W: 0xffefb0,
+        S: 0x111820,
+        H: 0x566b7f,
+      },
+      alpha: { W: 0.78, H: 0.9 },
+    });
   } else if (kind === "floor_label") {
     addPart(0, 0, width, height, 0xffd166, 0xfff0b8, 0.52);
     addPart(-width * 0.24, 0, width * 0.12, height * 1.5, 0x263341, 0xfff0b8, 0.72);
@@ -669,10 +825,26 @@ function createSetDressingSprite(
     addPart(0, 0, width * 0.64, height * 0.34, 0x72d18b, 0xcfffd5, 0.78);
     addPart(width * 0.32, 0, width * 0.12, height * 1.12, 0xfff0b8, 0xcfffd5, 0.46);
   } else if (kind === "exit_marker") {
-    addPart(-width * 0.28, 0, width * 0.22, height, 0x57d7ff, 0xd7f7ff, 0.58).setRotation(0.42);
-    addPart(0, 0, width * 0.22, height, 0x57d7ff, 0xd7f7ff, 0.66).setRotation(0.42);
-    addPart(width * 0.28, 0, width * 0.22, height, 0x57d7ff, 0xd7f7ff, 0.58).setRotation(0.42);
-    addPart(0, height * 0.42, width * 0.86, Math.max(4, height * 0.12), 0xd7f7ff, 0x57d7ff, 0.34);
+    return createPixelMatrixSprite({
+      rows: [
+        "..G..G..G..",
+        ".GG.GG.GG..",
+        "GHHGHHGHHG.",
+        ".GG.GG.GG..",
+        "..G..G..G..",
+      ],
+      palette: {
+        O: 0x0b1118,
+        M: 0x9aa7b4,
+        D: 0x263341,
+        F: 0x2d3b49,
+        G: 0x57d7ff,
+        W: 0xffd166,
+        S: 0x111820,
+        H: 0xd7f7ff,
+      },
+      alpha: { G: 0.72, H: 0.46 },
+    });
   } else if (kind === "surveillance_marks") {
     addPart(0, 0, width, Math.max(4, height * 0.12), 0x6bd3ff, 0xd7f7ff, 0.3);
     addPart(-width * 0.24, height * 0.18, width * 0.32, Math.max(4, height * 0.1), 0xff5f56, 0xffb3b0, 0.26).setRotation(-0.28);
