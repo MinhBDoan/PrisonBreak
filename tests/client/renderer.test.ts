@@ -673,57 +673,66 @@ describe("GameRenderer", () => {
 
   it("renders interactables with stronger pixel-world silhouette cues", () => {
     const renderer = new GameRenderer();
-    const rectangles: Array<{ fillColor?: number; alpha?: number; strokeColor?: number; lineWidth?: number }> = [];
-    const stars: Array<{ fillColor?: number; strokeColor?: number; lineWidth?: number }> = [];
-    const circles: Array<{ fillColor?: number; strokeColor?: number; lineWidth?: number }> = [];
-    const makeRect = () => ({
-      setOrigin: () => makeRect(),
-      setPosition: () => makeRect(),
-      setSize: () => makeRect(),
-      setFillStyle: (fillColor: number, alpha?: number) => {
-        rectangles.push({ fillColor, alpha });
-        return makeRect();
-      },
-      setStrokeStyle: (lineWidth: number, strokeColor: number) => {
-        rectangles.push({ lineWidth, strokeColor });
-        return makeRect();
-      },
-      setDepth: () => makeRect(),
-      setRotation: () => makeRect(),
-      setAlpha: () => makeRect(),
-      setVisible: () => makeRect(),
-      setBlendMode: () => makeRect(),
-    });
-    const rectangle = makeRect();
-    const circle = {
-      setPosition: () => circle,
-      setVisible: () => circle,
-      setStrokeStyle: (lineWidth: number, strokeColor: number) => {
-        circles.push({ lineWidth, strokeColor });
-        return circle;
-      },
-      setBlendMode: () => circle,
-      setDepth: () => circle,
+    const snapshot = new GameSimulation().getSnapshot();
+    const descriptors = renderer.describe(snapshot);
+    type InteractableLabel = "pebble" | "weapon" | "healing" | "lockedDoor" | "mainKey" | "exit" | "other";
+    type StrokeCall = { lineWidth: number; strokeColor: number; alpha?: number };
+    const shapes: Array<{ label: InteractableLabel; strokes: StrokeCall[] }> = [];
+    const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+    const matchesPosition = (x: number, y: number, target: { x: number; y: number }) =>
+      near(x, target.x) && near(y, target.y);
+    const labelRectangle = (x: number, y: number, width: number, height: number): InteractableLabel => {
+      if (
+        descriptors.weaponPickups.some((pickup) => matchesPosition(x, y, pickup)) &&
+        width === 26 &&
+        height === 12
+      ) {
+        return "weapon";
+      }
+      if (
+        descriptors.healingPickups.some((pickup) => matchesPosition(x, y, pickup)) &&
+        width === 24 &&
+        height === 16
+      ) {
+        return "healing";
+      }
+      if (
+        descriptors.doors.some((door) => !door.unlocked && matchesPosition(x, y, { x: door.hingeX, y: door.hingeY }))
+      ) {
+        return "lockedDoor";
+      }
+      if (matchesPosition(x, y, descriptors.objectives.exit) && width === 40 && height === 52) {
+        return "exit";
+      }
+      return "other";
     };
-    const star = {
-      setPosition: () => star,
-      setVisible: () => star,
-      setFillStyle: (fillColor: number) => {
-        stars.push({ fillColor });
-        return star;
-      },
-      setStrokeStyle: (lineWidth: number, strokeColor: number) => {
-        stars.push({ lineWidth, strokeColor });
-        return star;
-      },
+    const makeShape = (label: InteractableLabel) => {
+      const shape = {
+        label,
+        strokes: [] as StrokeCall[],
+        setOrigin: () => shape,
+        setPosition: () => shape,
+        setSize: () => shape,
+        setFillStyle: () => shape,
+        setStrokeStyle: (lineWidth: number, strokeColor: number, alpha?: number) => {
+          shape.strokes.push({ lineWidth, strokeColor, alpha });
+          return shape;
+        },
+        setDepth: () => shape,
+        setRotation: () => shape,
+        setAlpha: () => shape,
+        setVisible: () => shape,
+        setBlendMode: () => shape,
+      };
+      shapes.push(shape);
+      return shape;
     };
     const scene = {
       add: {
-        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number, alpha?: number) => {
-          rectangles.push({ fillColor, alpha });
-          return rectangle;
+        rectangle: (x: number, y: number, width: number, height: number) => {
+          return makeShape(labelRectangle(x, y, width, height));
         },
-        ellipse: () => rectangle,
+        ellipse: () => makeShape("other"),
         container: (_x: number, _y: number, children: unknown[]) => ({
           list: children,
           setPosition: () => undefined,
@@ -733,13 +742,11 @@ describe("GameRenderer", () => {
           setVisible: () => undefined,
           setRotation: () => undefined,
         }),
-        circle: (_x: number, _y: number, _radius: number, fillColor: number) => {
-          circles.push({ fillColor });
-          return circle;
+        circle: (x: number, y: number) => {
+          return makeShape(descriptors.pebbles.some((pebble) => matchesPosition(x, y, pebble)) ? "pebble" : "other");
         },
-        star: (_x: number, _y: number, _points: number, _inner: number, _outer: number, fillColor: number) => {
-          stars.push({ fillColor });
-          return star;
+        star: (x: number, y: number) => {
+          return makeShape(matchesPosition(x, y, descriptors.objectives.key) ? "mainKey" : "other");
         },
         graphics: () => ({
           clear: () => undefined,
@@ -757,16 +764,38 @@ describe("GameRenderer", () => {
       cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
     };
 
-    const snapshot = new GameSimulation().getSnapshot();
-    renderer.render(scene as never, {
-      ...snapshot,
-      objectives: { ...snapshot.objectives, exitUnlocked: true },
-    });
+    renderer.render(scene as never, snapshot);
 
-    expect(rectangles.some((rect) => rect.strokeColor === 0xd7f7ff && rect.lineWidth === 4)).toBe(true);
-    expect(rectangles.some((rect) => rect.strokeColor === 0xfff0b8 && rect.lineWidth === 4)).toBe(true);
-    expect(stars.some((shape) => shape.strokeColor === 0xd7f7ff && shape.lineWidth === 4)).toBe(true);
-    expect(circles.some((shape) => shape.strokeColor === 0xfff0b8 && shape.lineWidth === 3)).toBe(true);
+    expect(shapes.find((shape) => shape.label === "pebble")?.strokes).toContainEqual({
+      lineWidth: 3,
+      strokeColor: 0xfff0b8,
+      alpha: 0.62,
+    });
+    expect(shapes.find((shape) => shape.label === "weapon")?.strokes).toContainEqual({
+      lineWidth: 4,
+      strokeColor: 0xfff0b8,
+      alpha: 0.86,
+    });
+    expect(shapes.find((shape) => shape.label === "healing")?.strokes).toContainEqual({
+      lineWidth: 4,
+      strokeColor: 0xcfffd5,
+      alpha: 0.9,
+    });
+    expect(shapes.find((shape) => shape.label === "lockedDoor")?.strokes).toContainEqual({
+      lineWidth: 4,
+      strokeColor: 0xff7a6f,
+      alpha: 0.9,
+    });
+    expect(shapes.find((shape) => shape.label === "mainKey")?.strokes).toContainEqual({
+      lineWidth: 4,
+      strokeColor: 0xd7f7ff,
+      alpha: 0.92,
+    });
+    expect(shapes.find((shape) => shape.label === "exit")?.strokes).toContainEqual({
+      lineWidth: 4,
+      strokeColor: 0xfff0b8,
+      alpha: 0.88,
+    });
   });
 
   it("warms guard vision cones toward red as capture progress rises", () => {
