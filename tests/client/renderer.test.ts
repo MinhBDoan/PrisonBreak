@@ -190,6 +190,72 @@ describe("GameRenderer", () => {
     expect(guards.find((guard) => guard.id === "guard-down")?.visual.silhouette).toBe("front");
   });
 
+  function captureSetDressingRender(ids: string[]): Array<{ id: string; childCount: number; fillColors: number[] }> {
+    const renderer = new GameRenderer();
+    const descriptors = new GameRenderer().describe(new GameSimulation().getSnapshot());
+    const captured: Array<{ id: string; childCount: number; fillColors: number[] }> = [];
+    const currentColors: number[] = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          currentColors.push(fillColor);
+          return rectangle;
+        },
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const fillColors = [...currentColors];
+          currentColors.length = 0;
+          const container = {
+            list: children,
+            setPosition: (x: number, y: number) => {
+              const match = descriptors.setDressingObjects.find((object) => object.x === x && object.y === y);
+              if (match && ids.includes(match.id)) {
+                captured.push({ id: match.id, childCount: children.length, fillColors });
+              }
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+    return captured;
+  }
+
   it("creates character containers for prisoner dressing instead of flat rectangles", () => {
     const renderer = new GameRenderer();
     const createdContainers: Array<{ depth: number | null; scale: number | null }> = [];
@@ -319,6 +385,21 @@ describe("GameRenderer", () => {
     const propContainers = createdContainers.filter((container) => container.depth === 3);
     expect(propContainers.length).toBeGreaterThanOrEqual(10);
     expect(propContainers.every((container) => container.childCount >= 2)).toBe(true);
+  });
+
+  it("renders cell fixtures as recognizable pixel-object silhouettes", () => {
+    const props = captureSetDressingRender(["starter_cell_bars", "starter_cell_cot", "starter_cell_toilet"]);
+
+    expect(props).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "starter_cell_bars", childCount: expect.any(Number) }),
+      expect.objectContaining({ id: "starter_cell_cot", childCount: expect.any(Number) }),
+      expect.objectContaining({ id: "starter_cell_toilet", childCount: expect.any(Number) }),
+    ]));
+    expect(props.find((prop) => prop.id === "starter_cell_bars")?.childCount).toBeGreaterThanOrEqual(7);
+    expect(props.find((prop) => prop.id === "starter_cell_cot")?.childCount).toBeGreaterThanOrEqual(6);
+    expect(props.find((prop) => prop.id === "starter_cell_toilet")?.childCount).toBeGreaterThanOrEqual(5);
+    expect(props.find((prop) => prop.id === "starter_cell_cot")?.fillColors).toEqual(expect.arrayContaining([0xd6dde4, 0x2d3b49, 0x7f93a8]));
+    expect(props.find((prop) => prop.id === "starter_cell_toilet")?.fillColors).toEqual(expect.arrayContaining([0xe9f1f6, 0x91a8b6]));
   });
 
   it("renders storage and security identity props as multi-part pixel containers", () => {
