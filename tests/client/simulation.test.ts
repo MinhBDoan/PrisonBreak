@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prisonMap, tileAt } from "../../client/src/game/map";
+import { isWall, prisonMap, tileAt } from "../../client/src/game/map";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
 import type { SimulationInput } from "../../client/src/game/types";
 import type { NextRunConfig } from "../../shared/contracts";
@@ -168,6 +168,15 @@ describe("GameSimulation", () => {
     const samplePoints = identityObjects.map((object) => object.position);
 
     expect(samplePoints.every((point) => tileAt(prisonMap, point) !== "#")).toBe(true);
+  });
+
+  it("keeps decorative set dressing on traversable map tiles and outside solid collision lists", () => {
+    const solidIds = new Set(prisonMap.coverObjects.map((object) => object.id));
+
+    for (const object of prisonMap.setDressingObjects) {
+      expect(solidIds.has(object.id)).toBe(false);
+      expect(isWall(prisonMap, object.position)).toBe(false);
+    }
   });
 
   it("adds a readable central route choice with cover on one path and a posted guard on the other", () => {

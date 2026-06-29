@@ -146,6 +146,20 @@ describe("GameRenderer", () => {
     expect(descriptors.objectives.exit.id).toBe("locked_exit");
   });
 
+  it("describes pixel-prison room identity props for cells, corridors, storage, security, and exit", () => {
+    const descriptors = new GameRenderer().describe(new GameSimulation().getSnapshot());
+
+    expect(descriptors.setDressingObjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "starter_cell_wall_marks", kind: "cell_grime" }),
+      expect.objectContaining({ id: "prisoner_cell_a_shadow", kind: "prisoner_shadow" }),
+      expect.objectContaining({ id: "central_corridor_floor_stripe", kind: "corridor_stripe" }),
+      expect.objectContaining({ id: "east_corridor_signage", kind: "zone_sign" }),
+      expect.objectContaining({ id: "storage_bandage_marker", kind: "supply_marker" }),
+      expect.objectContaining({ id: "exit_floor_chevrons", kind: "exit_marker" }),
+      expect.objectContaining({ id: "security_camera_sweep_marks", kind: "surveillance_marks" }),
+    ]));
+  });
+
   it("assigns deterministic animal variants to NPC prisoner dressing", () => {
     const descriptors = new GameRenderer().describe(new GameSimulation().getSnapshot());
 

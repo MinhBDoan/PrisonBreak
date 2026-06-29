@@ -52,7 +52,14 @@ export type SetDressingKind =
   | "floor_label"
   | "control_panel"
   | "camera_marker"
-  | "status_lights";
+  | "status_lights"
+  | "cell_grime"
+  | "prisoner_shadow"
+  | "corridor_stripe"
+  | "zone_sign"
+  | "supply_marker"
+  | "exit_marker"
+  | "surveillance_marks";
 
 export type SetDressingObject = {
   id: string;
