@@ -15,7 +15,7 @@ import type {
 export const renderScale = 64;
 const noiseRippleCooldownMs = 500;
 const pebbleThrowRange = 4;
-const npcPrisonerSpriteScale = 0.78;
+const npcPrisonerSpriteScale = 1;
 
 export type VisionConeDescriptor = {
   x: number;

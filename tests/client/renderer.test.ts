@@ -157,7 +157,7 @@ describe("GameRenderer", () => {
 
   it("creates character containers for prisoner dressing instead of flat rectangles", () => {
     const renderer = new GameRenderer();
-    const createdContainers: Array<{ scale: number | null }> = [];
+    const createdContainers: Array<{ depth: number | null; scale: number | null }> = [];
     const rectangle = {
       setOrigin: () => rectangle,
       setPosition: () => rectangle,
@@ -177,13 +177,17 @@ describe("GameRenderer", () => {
         container: (_x: number, _y: number, children: unknown[]) => {
           const container = {
             list: children,
+            depth: null as number | null,
             scale: null as number | null,
             setPosition: () => container,
             setScale: (scale: number) => {
               container.scale = scale;
               return container;
             },
-            setDepth: () => container,
+            setDepth: (depth: number) => {
+              container.depth = depth;
+              return container;
+            },
             setAlpha: () => container,
             setVisible: () => container,
             setRotation: () => container,
@@ -212,7 +216,7 @@ describe("GameRenderer", () => {
     renderer.render(scene as never, new GameSimulation().getSnapshot());
 
     expect(createdContainers.length).toBeGreaterThanOrEqual(6);
-    expect(createdContainers.filter((container) => container.scale === 0.78)).toHaveLength(2);
+    expect(createdContainers.filter((container) => container.depth === 5 && container.scale === 1)).toHaveLength(2);
   });
 
   it("swings player-opened doors away from the player around a hinge edge", () => {
