@@ -84,6 +84,7 @@ const hudCalls = {
 };
 
 const rendererCalls = {
+  render: vi.fn(),
   showPebbleAim: vi.fn(),
   hidePebbleAim: vi.fn(),
   spawnPebbleThrow: vi.fn(),
@@ -94,6 +95,7 @@ const rendererCalls = {
 function mockSceneCollaborators(): void {
   hudCalls.update.mockReset();
   hudCalls.showPaused.mockReset();
+  rendererCalls.render.mockReset();
   rendererCalls.showPebbleAim.mockReset();
   rendererCalls.hidePebbleAim.mockReset();
   rendererCalls.spawnPebbleThrow.mockReset();
@@ -118,7 +120,9 @@ function mockSceneCollaborators(): void {
     },
     GameRenderer: class {
       mount() {}
-      render() {}
+      render(...args: unknown[]) {
+        rendererCalls.render(...args);
+      }
       followCamera() {}
       spawnNoiseRipple() {}
       showPebbleAim(...args: unknown[]) {
@@ -320,6 +324,53 @@ describe("GameScene", () => {
     expect(stepSpy).toHaveBeenLastCalledWith(expect.objectContaining({
       direction: { x: 0, y: 0 },
     }));
+  });
+
+  it("passes visual-only player facing and walk phase to the renderer", async () => {
+    const { scene, keys } = await createSceneHarness();
+    const runtime = scene as unknown as { time: { now: number } };
+
+    startRun(scene, 1);
+    rendererCalls.render.mockClear();
+
+    runtime.time.now = 1000;
+    keys.D.isDown = true;
+    scene.update();
+
+    expect(rendererCalls.render).toHaveBeenLastCalledWith(
+      scene,
+      expect.anything(),
+      expect.objectContaining({ facing: "right", moving: true, walkPhase: 1 }),
+    );
+
+    keys.D.isDown = false;
+    keys.W.isDown = true;
+    runtime.time.now = 1100;
+    scene.update();
+
+    expect(rendererCalls.render).toHaveBeenLastCalledWith(
+      scene,
+      expect.anything(),
+      expect.objectContaining({ facing: "up", moving: true, walkPhase: 1 }),
+    );
+
+    runtime.time.now = 1140;
+    scene.update();
+
+    expect(rendererCalls.render).toHaveBeenLastCalledWith(
+      scene,
+      expect.anything(),
+      expect.objectContaining({ facing: "up", moving: true, walkPhase: 0 }),
+    );
+
+    keys.W.isDown = false;
+    scene.update();
+
+    expect(rendererCalls.render).toHaveBeenLastCalledWith(
+      scene,
+      expect.anything(),
+      expect.objectContaining({ facing: "up", moving: false, walkPhase: 0 }),
+    );
   });
 
   it("uses combat hotkeys for selection and fires selected gun toward pointer on click", async () => {

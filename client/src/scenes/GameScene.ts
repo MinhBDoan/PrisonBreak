@@ -3,6 +3,7 @@ import { createIdempotencyKey } from "../api/GameApiClient";
 import { GameSimulation } from "../game/GameSimulation";
 import type { SimulationInput, Vector, WeaponId } from "../game/types";
 import { clampThrowTarget, GameRenderer, renderScale } from "../render/GameRenderer";
+import type { PlayerRenderState, PlayerVisualFacing } from "../render/GameRenderer";
 import { Hud } from "../ui/Hud";
 import type { StartRunResponse } from "../../../shared/contracts";
 import type { HudSelectedSlot } from "../ui/Hud";
@@ -11,6 +12,7 @@ import { weapons } from "../game/weapons";
 const minPebbleThrowRange = 1;
 const maxPebbleThrowRange = 4;
 const pebbleChargeMs = 1000;
+const playerWalkPhaseCadenceMs = 140;
 
 type KeySet = {
   up: Phaser.Input.Keyboard.Key;
@@ -43,6 +45,9 @@ export class GameScene extends Phaser.Scene {
   private selectedMeleeWeaponId: WeaponId = "makeshift_knife";
   private aimingPebble = false;
   private pebbleAimStartedAtMs = -1;
+  private playerVisualFacing: PlayerVisualFacing = "down";
+  private playerWalkPhase: 0 | 1 = 0;
+  private playerWalkPhaseChangedAtMs = Number.NEGATIVE_INFINITY;
   private runData: StartRunResponse = {
     runId: 0,
     config: { adaptations: [] },
@@ -69,6 +74,9 @@ export class GameScene extends Phaser.Scene {
     this.selectedMeleeWeaponId = "makeshift_knife";
     this.aimingPebble = false;
     this.pebbleAimStartedAtMs = -1;
+    this.playerVisualFacing = "down";
+    this.playerWalkPhase = 0;
+    this.playerWalkPhaseChangedAtMs = Number.NEGATIVE_INFINITY;
     this.cameras.main.setBackgroundColor("#081018");
     this.simulation = new GameSimulation({ nextRunConfig: data.config });
     this.viewRenderer = new GameRenderer();
@@ -102,7 +110,7 @@ export class GameScene extends Phaser.Scene {
 
     this.viewRenderer.mount(this);
     const snapshot = this.simulation.getSnapshot();
-    this.viewRenderer.render(this, snapshot);
+    this.viewRenderer.render(this, snapshot, { facing: "down", walkPhase: 0, moving: false });
     this.updatePebbleAim(snapshot);
     this.viewRenderer.followCamera(this, snapshot);
     this.hud.update(snapshot, this.selectedSlot, this.selectedMeleeWeapon(snapshot));
@@ -127,13 +135,14 @@ export class GameScene extends Phaser.Scene {
 
     const snapshotBefore = this.simulation.getSnapshot();
     const input = this.readInput();
+    const playerVisualState = this.updatePlayerVisualState(input.direction);
     if (!snapshotBefore.completed) {
       this.simulation.step(input);
     }
 
     this.emitNewNoiseRipples();
     const snapshot = this.simulation.getSnapshot();
-    this.viewRenderer.render(this, snapshot);
+    this.viewRenderer.render(this, snapshot, playerVisualState);
     this.updatePebbleAim(snapshot);
     this.viewRenderer.followCamera(this, snapshot);
     this.hud.update(snapshot, this.selectedSlot, this.selectedMeleeWeapon(snapshot));
@@ -170,6 +179,30 @@ export class GameScene extends Phaser.Scene {
       attack: this.consumeAttackInput(),
       heal: this.consumeHeld("KeyF", "f", "F"),
       reload: this.consumeHeld("KeyR", "r", "R"),
+    };
+  }
+
+  private updatePlayerVisualState(direction: Vector): PlayerRenderState {
+    const moving = direction.x !== 0 || direction.y !== 0;
+    if (moving) {
+      if (Math.abs(direction.x) >= Math.abs(direction.y)) {
+        this.playerVisualFacing = direction.x < 0 ? "left" : "right";
+      } else {
+        this.playerVisualFacing = direction.y < 0 ? "up" : "down";
+      }
+      if (this.time.now - this.playerWalkPhaseChangedAtMs >= playerWalkPhaseCadenceMs) {
+        this.playerWalkPhase = this.playerWalkPhase === 0 ? 1 : 0;
+        this.playerWalkPhaseChangedAtMs = this.time.now;
+      }
+    } else {
+      this.playerWalkPhase = 0;
+      this.playerWalkPhaseChangedAtMs = Number.NEGATIVE_INFINITY;
+    }
+
+    return {
+      facing: this.playerVisualFacing,
+      walkPhase: this.playerWalkPhase,
+      moving,
     };
   }
 
