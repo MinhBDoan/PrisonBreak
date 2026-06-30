@@ -578,6 +578,129 @@ describe("GameRenderer", () => {
     expect(hasSideOnlyHead(playerBuilds[2].rects)).toBe(false);
   });
 
+  it("renders distinct player pixel silhouettes for front back and side walking", () => {
+    const snapshot = new GameSimulation().getSnapshot();
+    const descriptor = new GameRenderer().describe(snapshot).player;
+    type RectCall = { x: number; y: number; width: number; height: number; fillColor: number };
+    type PlayerBuild = {
+      childCount: number;
+      colors: number[];
+      depth: number | null;
+      rects: RectCall[];
+      x: number | null;
+      y: number | null;
+    };
+    const renderPlayer = (state: { facing: "up" | "down" | "left" | "right"; walkPhase: 0 | 1; moving: boolean }) => {
+      const renderer = new GameRenderer();
+      const createdPlayers: PlayerBuild[] = [];
+      let pendingRects: RectCall[] = [];
+      const makeShape = () => {
+        const shape = {
+          destroy: () => undefined,
+          setOrigin: () => shape,
+          setPosition: () => shape,
+          setSize: () => shape,
+          setFillStyle: () => shape,
+          setStrokeStyle: () => shape,
+          setDepth: () => shape,
+          setRotation: () => shape,
+          setAlpha: () => shape,
+          setVisible: () => shape,
+          setBlendMode: () => shape,
+        };
+        return shape;
+      };
+      const shape = makeShape();
+      const scene = {
+        add: {
+          rectangle: (x: number, y: number, width: number, height: number, fillColor: number) => {
+            pendingRects.push({ x, y, width, height, fillColor });
+            return makeShape();
+          },
+          ellipse: () => shape,
+          container: (_x: number, _y: number, children: Array<{ destroy?: () => void }>) => {
+            const rects = pendingRects.slice(-children.length);
+            pendingRects = [];
+            const playerRecord = {
+              childCount: children.length,
+              colors: rects.map((rect) => rect.fillColor),
+              depth: null as number | null,
+              rects,
+              x: null as number | null,
+              y: null as number | null,
+            };
+            const container = {
+              list: children,
+              destroy: () => undefined,
+              setPosition: (x: number, y: number) => {
+                playerRecord.x = x;
+                playerRecord.y = y;
+                return container;
+              },
+              setScale: () => container,
+              setDepth: (depth: number) => {
+                playerRecord.depth = depth;
+                return container;
+              },
+              setAlpha: () => container,
+              setVisible: () => container,
+              setRotation: () => container,
+            };
+            createdPlayers.push(playerRecord);
+            return container;
+          },
+          circle: () => shape,
+          star: () => shape,
+          graphics: () => ({
+            clear: () => undefined,
+            setDepth: () => undefined,
+            lineStyle: () => undefined,
+            beginPath: () => undefined,
+            moveTo: () => undefined,
+            lineTo: () => undefined,
+            strokePath: () => undefined,
+            fillStyle: () => undefined,
+            slice: () => undefined,
+            fillPath: () => undefined,
+          }),
+        },
+        cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+      };
+
+      renderer.render(scene as never, snapshot, state);
+      const player = createdPlayers.find(
+        (container) => container.depth === 18 && container.x === descriptor.x && container.y === descriptor.y,
+      );
+      expect(player).toBeDefined();
+      return player as PlayerBuild;
+    };
+
+    const front = renderPlayer({ facing: "down", walkPhase: 0, moving: false });
+    const back = renderPlayer({ facing: "up", walkPhase: 0, moving: false });
+    const sideMoving = renderPlayer({ facing: "right", walkPhase: 1, moving: true });
+    const sideIdle = renderPlayer({ facing: "right", walkPhase: 0, moving: true });
+    const geometryKey = (rect: RectCall) => `${rect.x}:${rect.y}:${rect.width}:${rect.height}:${rect.fillColor}`;
+    const geometryKeys = (rects: RectCall[]) => rects.map(geometryKey);
+    const sideHeadGeometry = (rect: RectCall) =>
+      rect.x === 3 && rect.y === -15 && rect.width === 16 && rect.height === 17;
+
+    expect(front.colors.some((color) => color === 0xf8fbff || color === 0xfff0b8)).toBe(true);
+    expect(front.colors).toContain(0xfff0b8);
+    expect(front.colors).not.toContain(0x6a7d8f);
+    expect(back.colors).toContain(0x6a7d8f);
+    expect(back.colors).not.toContain(0xfff0b8);
+    expect(sideMoving.colors).toContain(0xfff0b8);
+    expect(sideMoving.colors).not.toContain(0x6a7d8f);
+    expect(geometryKeys(front.rects)).not.toEqual(geometryKeys(back.rects));
+    expect(geometryKeys(sideMoving.rects)).not.toEqual(geometryKeys(front.rects));
+    expect(sideMoving.rects.some(sideHeadGeometry)).toBe(true);
+    expect(front.rects.some(sideHeadGeometry)).toBe(false);
+    expect(sideMoving.childCount).not.toBe(front.childCount);
+    expect(geometryKeys(sideMoving.rects)).not.toEqual(geometryKeys(back.rects));
+    expect(geometryKeys(sideMoving.rects)).not.toEqual(geometryKeys(sideIdle.rects));
+    expect(sideMoving).toMatchObject({ x: sideIdle.x, y: sideIdle.y });
+  });
+
   it("rebuilds the player sprite when visual silhouette changes", () => {
     const renderer = new GameRenderer();
     const snapshot = new GameSimulation().getSnapshot();
@@ -666,9 +789,106 @@ describe("GameRenderer", () => {
     expect(createdPlayerColors[0]).toContain(0xfff0b8);
     expect(createdPlayerColors[0]).not.toContain(0xd7f7ff);
     expect(createdPlayerColors[1]).toContain(0x75e1ff);
-    expect(createdPlayerColors[1]).not.toContain(0xfff0b8);
+    expect(createdPlayerColors[1]).toContain(0xfff0b8);
     expect(createdPlayerColors[1]).not.toContain(0xd7f7ff);
     expect(createdPlayerColors.slice(2).some((colors) => colors.includes(0xd7f7ff))).toBe(true);
+  });
+
+  it("reuses the player sprite when movement changes without a visual step", () => {
+    const renderer = new GameRenderer();
+    const snapshot = new GameSimulation().getSnapshot();
+    const playerDescriptor = renderer.describe(snapshot).player;
+    type RectCall = { x: number; y: number; width: number; height: number; fillColor: number };
+    const destroyedContainers: unknown[] = [];
+    const createdPlayers: Array<{ depth: number | null; x: number | null; y: number | null; rects: RectCall[] }> = [];
+    let pendingRects: RectCall[] = [];
+    const makeShape = () => {
+      const shape = {
+        destroy: () => undefined,
+        setOrigin: () => shape,
+        setPosition: () => shape,
+        setSize: () => shape,
+        setFillStyle: () => shape,
+        setStrokeStyle: () => shape,
+        setDepth: () => shape,
+        setRotation: () => shape,
+        setAlpha: () => shape,
+        setVisible: () => shape,
+        setBlendMode: () => shape,
+      };
+      return shape;
+    };
+    const scene = {
+      add: {
+        rectangle: (x: number, y: number, width: number, height: number, fillColor: number) => {
+          pendingRects.push({ x, y, width, height, fillColor });
+          return makeShape();
+        },
+        ellipse: () => makeShape(),
+        container: (_x: number, _y: number, children: Array<{ destroy?: () => void }>) => {
+          const playerRecord = {
+            depth: null as number | null,
+            x: null as number | null,
+            y: null as number | null,
+            rects: pendingRects.slice(-children.length),
+          };
+          pendingRects = [];
+          const container = {
+            list: children,
+            destroy: () => {
+              destroyedContainers.push(container);
+            },
+            setPosition: (x: number, y: number) => {
+              playerRecord.x = x;
+              playerRecord.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: (depth: number) => {
+              playerRecord.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          createdPlayers.push(playerRecord);
+          return container;
+        },
+        circle: () => makeShape(),
+        star: () => makeShape(),
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+    const geometryKeys = (rects: RectCall[]) => rects.map((rect) => `${rect.x}:${rect.y}:${rect.width}:${rect.height}:${rect.fillColor}`);
+    const playerBuilds = () =>
+      createdPlayers.filter((container) => container.depth === 18 && container.x === playerDescriptor.x && container.y === playerDescriptor.y);
+
+    renderer.render(scene as never, snapshot, { facing: "down", walkPhase: 0, moving: false });
+    const idleGeometry = geometryKeys(playerBuilds()[0].rects);
+
+    renderer.render(scene as never, snapshot, { facing: "down", walkPhase: 0, moving: true });
+
+    expect(playerBuilds()).toHaveLength(1);
+    expect(destroyedContainers).toHaveLength(0);
+
+    renderer.render(scene as never, snapshot, { facing: "down", walkPhase: 1, moving: true });
+
+    expect(playerBuilds()).toHaveLength(2);
+    expect(destroyedContainers).toHaveLength(1);
+    expect(geometryKeys(playerBuilds()[1].rects)).not.toEqual(idleGeometry);
   });
 
   it("renders guards with cold security contrast chips distinct from the player", () => {
