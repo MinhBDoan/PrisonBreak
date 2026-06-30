@@ -320,6 +320,86 @@ describe("GameRenderer", () => {
     expect(createdContainers.filter((container) => container.depth === 5 && container.scale === 1)).toHaveLength(2);
   });
 
+  it("renders the player with a warm pixel contrast highlight", () => {
+    const renderer = new GameRenderer();
+    const snapshot = new GameSimulation().getSnapshot();
+    const playerDescriptor = renderer.describe(snapshot).player;
+    const playerContainers: Array<{ childCount: number; colors: number[]; depth: number | null; x: number | null; y: number | null }> = [];
+    let pendingColors: number[] = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const containerRecord = {
+            childCount: children.length,
+            colors: pendingColors.slice(-children.length),
+            depth: null as number | null,
+            x: null as number | null,
+            y: null as number | null,
+          };
+          pendingColors = [];
+          const container = {
+            list: children,
+            setPosition: (x: number, y: number) => {
+              containerRecord.x = x;
+              containerRecord.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: (depth: number) => {
+              containerRecord.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          playerContainers.push(containerRecord);
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, snapshot);
+
+    const playerContainer = playerContainers.find(
+      (container) => container.x === playerDescriptor.x && container.y === playerDescriptor.y && container.depth === 18,
+    );
+    expect(playerContainer?.childCount).toBeGreaterThanOrEqual(21);
+    expect(playerContainer?.colors).toContain(0xfff0b8);
+  });
+
   it("renders set dressing props as pixel object containers", () => {
     const renderer = new GameRenderer();
     const createdContainers: Array<{ depth: number | null; childCount: number }> = [];

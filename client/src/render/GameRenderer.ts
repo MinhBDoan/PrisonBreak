@@ -407,6 +407,10 @@ function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescript
   body.setStrokeStyle(2, visual.outlineColor, 0.96);
   const stripeA = addPixelRect(scene, 0, -1, 17, 3, visual.accentColor, 0.95);
   const stripeB = addPixelRect(scene, 0, 8, 17, 3, visual.accentColor, 0.95);
+  const chestHighlight = addPixelRect(scene, 7, 2, 4, 13, 0xfff0b8, 0.92);
+  const shoulderChipLeft = addPixelRect(scene, -12, -5, 4, 5, 0xffd166, 0.92);
+  const shoulderChipRight = addPixelRect(scene, 12, -5, 4, 5, 0xffd166, 0.92);
+  const headRim = addPixelRect(scene, 0, -24, 14, 3, 0xf8fbff, 0.72);
   const playerMark = visual.playerHighlight ? addPixelRect(scene, 0, -28, 12, 3, visual.accentColor, 0.98) : null;
   const head = addPixelRect(scene, 0, -15, 20, 17, skinColor);
   head.setStrokeStyle(2, visual.outlineColor, 0.96);
@@ -427,6 +431,10 @@ function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescript
     body,
     stripeA,
     stripeB,
+    chestHighlight,
+    shoulderChipLeft,
+    shoulderChipRight,
+    headRim,
     head,
     earLeft,
     earRight,
