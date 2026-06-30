@@ -130,8 +130,10 @@ type RenderObjects = {
   guards: Map<string, Phaser.GameObjects.Container>;
   guardSilhouettes: Map<string, CharacterVisualDescriptor["silhouette"]>;
   guardCones: Map<string, Phaser.GameObjects.Graphics>;
-  hidingSpots: Map<string, Phaser.GameObjects.Rectangle>;
-  coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
+  hidingSpots: Map<string, Phaser.GameObjects.Container>;
+  lockerOccupied: Map<string, boolean>;
+  coverObjects: Map<string, Phaser.GameObjects.Container>;
+  coverSizes: Map<string, { width: number; height: number }>;
   setDressingObjects: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Container>;
   pebbles: Map<string, Phaser.GameObjects.Arc>;
   weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
@@ -633,6 +635,57 @@ function destroyContainerWithChildren(container: Phaser.GameObjects.Container): 
     }
   }
   container.destroy();
+}
+
+function createLockerSprite(scene: Phaser.Scene, bodyOccupied: boolean): Phaser.GameObjects.Container {
+  const outline = bodyOccupied ? 0xff7a8a : 0x90a9bf;
+  const body = addPixelRect(scene, 0, 0, 30, 44, bodyOccupied ? 0x5b3240 : 0x566b7f, bodyOccupied ? 0.94 : 0.9);
+  body.setStrokeStyle(2, outline, bodyOccupied ? 0.8 : 0.55);
+  const leftDoorOffset = addPixelRect(scene, -8, -1, 11, 39, bodyOccupied ? 0x74384a : 0x48596c, 0.82);
+  const doorSplit = addPixelRect(scene, 0, 0, 3, 40, bodyOccupied ? 0xff7a8a : 0x293746, 0.85);
+  const topLip = addPixelRect(scene, 1, -23, 24, 4, bodyOccupied ? 0xff7a8a : 0x90a9bf, 0.62);
+  const ventTop = addPixelRect(scene, -6, -13, 9, 3, 0xd7f7ff, 0.72);
+  const ventBottom = addPixelRect(scene, 6, -7, 9, 3, 0x90a9bf, 0.72);
+  const handle = addPixelRect(scene, 9, 3, 3, 10, bodyOccupied ? 0xffd166 : 0xfff0b8, 0.9);
+  const base = addPixelRect(scene, 0, 23, 26, 5, 0x101820, 0.55);
+  const notchLeft = addPixelRect(scene, -17, -18, 4, 8, 0x101820, 0.34);
+  const notchRight = addPixelRect(scene, 17, 15, 4, 8, 0x101820, 0.34);
+
+  return scene.add.container(0, 0, [
+    body,
+    leftDoorOffset,
+    doorSplit,
+    topLip,
+    ventTop,
+    ventBottom,
+    handle,
+    base,
+    notchLeft,
+    notchRight,
+  ]);
+}
+
+function createShadowHidingSpotSprite(scene: Phaser.Scene, bodyOccupied: boolean): Phaser.GameObjects.Container {
+  const shadow = addPixelRect(scene, 0, 2, 34, 20, bodyOccupied ? 0x5b3240 : 0x151a22, bodyOccupied ? 0.82 : 0.72);
+  shadow.setStrokeStyle(2, bodyOccupied ? 0xff7a8a : 0x58616d, bodyOccupied ? 0.62 : 0.45);
+  const backEdge = addPixelRect(scene, -6, -8, 22, 7, bodyOccupied ? 0x74384a : 0x0b1118, 0.42);
+  const sideGap = addPixelRect(scene, 15, 2, 6, 15, 0x05090e, 0.36);
+
+  return scene.add.container(0, 0, [shadow, backEdge, sideGap]);
+}
+
+function createCoverSprite(scene: Phaser.Scene, width: number, height: number): Phaser.GameObjects.Container {
+  const body = addPixelRect(scene, 0, 0, width, height, 0x6b5845, 0.95);
+  body.setStrokeStyle(2, 0xb28b63, 0.75);
+  const top = addPixelRect(scene, 0, -height * 0.32, width * 0.84, Math.max(5, height * 0.18), 0x8a6a4c, 0.9);
+  const boardChip = addPixelRect(scene, -width * 0.18, -height * 0.45, width * 0.28, Math.max(4, height * 0.12), 0xfff0b8, 0.66);
+  const strap = addPixelRect(scene, 0, 0, Math.max(5, width * 0.12), height * 0.86, 0xfff0b8, 0.72);
+  const leftCap = addPixelRect(scene, -width * 0.44, height * 0.18, Math.max(5, width * 0.12), height * 0.35, 0x3b3028, 0.88);
+  const rightCap = addPixelRect(scene, width * 0.44, -height * 0.1, Math.max(5, width * 0.12), height * 0.35, 0x3b3028, 0.88);
+  const cornerNotch = addPixelRect(scene, width * 0.34, height * 0.32, Math.max(4, width * 0.1), Math.max(4, height * 0.16), 0x101820, 0.4);
+  const shadow = addPixelRect(scene, 0, height * 0.5, width * 0.76, Math.max(4, height * 0.14), 0x101820, 0.38);
+
+  return scene.add.container(0, 0, [body, top, boardChip, strap, leftCap, rightCap, cornerNotch, shadow]);
 }
 
 function createSetDressingSprite(
@@ -1218,7 +1271,9 @@ export class GameRenderer {
       guardSilhouettes: new Map(),
       guardCones: new Map(),
       hidingSpots: new Map(),
+      lockerOccupied: new Map(),
       coverObjects: new Map(),
+      coverSizes: new Map(),
       setDressingObjects: new Map(),
       pebbles: new Map(),
       weaponPickups: new Map(),
@@ -1272,32 +1327,6 @@ export class GameRenderer {
     objects.player.setScale(playerScaleX(playerState.facing), 1);
     objects.player.setDepth(18);
 
-    for (const spot of descriptors.hidingSpots) {
-      const color = spot.bodyOccupied ? 0x5b3240 : spot.type === "locker" ? 0x566b7f : 0x151a22;
-      const existing =
-        objects.hidingSpots.get(spot.id) ??
-        scene.add.rectangle(spot.x, spot.y, 34, 46, color, spot.type === "locker" ? 0.9 : 0.72);
-      existing.setPosition(spot.x, spot.y);
-      existing.setFillStyle(color, spot.bodyOccupied ? 0.94 : spot.type === "locker" ? 0.9 : 0.72);
-      existing.setStrokeStyle(
-        2,
-        spot.bodyOccupied ? 0xff7a8a : spot.type === "locker" ? 0x90a9bf : 0x58616d,
-        spot.bodyOccupied ? 0.8 : 0.45,
-      );
-      objects.hidingSpots.set(spot.id, existing);
-    }
-
-    for (const cover of descriptors.coverObjects) {
-      const existing =
-        objects.coverObjects.get(cover.id) ??
-        scene.add.rectangle(cover.x, cover.y, cover.width, cover.height, 0x6b5845, 0.95);
-      existing.setPosition(cover.x, cover.y);
-      existing.setSize(cover.width, cover.height);
-      existing.setFillStyle(0x6b5845, 0.95);
-      existing.setStrokeStyle(2, 0xb28b63, 0.75);
-      objects.coverObjects.set(cover.id, existing);
-    }
-
     for (const object of descriptors.setDressingObjects) {
       if (object.visual) {
         const existing = objects.setDressingObjects.get(object.id);
@@ -1320,6 +1349,44 @@ export class GameRenderer {
       prop.setPosition(object.x, object.y);
       prop.setDepth(3);
       objects.setDressingObjects.set(object.id, prop);
+    }
+
+    for (const spot of descriptors.hidingSpots) {
+      let container = objects.hidingSpots.get(spot.id);
+      const recordedOccupied = objects.lockerOccupied.get(spot.id);
+      if (container && recordedOccupied !== spot.bodyOccupied) {
+        destroyContainerWithChildren(container);
+        objects.hidingSpots.delete(spot.id);
+        objects.lockerOccupied.delete(spot.id);
+        container = undefined;
+      }
+      if (!container) {
+        container = spot.type === "locker"
+          ? createLockerSprite(scene, spot.bodyOccupied)
+          : createShadowHidingSpotSprite(scene, spot.bodyOccupied);
+        objects.hidingSpots.set(spot.id, container);
+        objects.lockerOccupied.set(spot.id, spot.bodyOccupied);
+      }
+      container.setPosition(spot.x, spot.y);
+      container.setDepth(3);
+    }
+
+    for (const cover of descriptors.coverObjects) {
+      let container = objects.coverObjects.get(cover.id);
+      const recordedSize = objects.coverSizes.get(cover.id);
+      if (container && recordedSize && (recordedSize.width !== cover.width || recordedSize.height !== cover.height)) {
+        destroyContainerWithChildren(container);
+        objects.coverObjects.delete(cover.id);
+        objects.coverSizes.delete(cover.id);
+        container = undefined;
+      }
+      if (!container) {
+        container = createCoverSprite(scene, cover.width, cover.height);
+        objects.coverObjects.set(cover.id, container);
+        objects.coverSizes.set(cover.id, { width: cover.width, height: cover.height });
+      }
+      container.setPosition(cover.x, cover.y);
+      container.setDepth(3);
     }
 
     for (const pebble of descriptors.pebbles) {

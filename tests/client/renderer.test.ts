@@ -345,6 +345,197 @@ describe("GameRenderer", () => {
     expect(byKind("supply_boxes")?.colors).toEqual(expect.arrayContaining([0xfff0b8, 0x8fd694]));
   });
 
+  it("renders lockers and cover as multi-part pixel props instead of plain rectangles", () => {
+    const renderer = new GameRenderer();
+    const snapshot = new GameSimulation().getSnapshot();
+    const descriptors = renderer.describe(snapshot);
+    type ContainerRecord = { x: number | null; y: number | null; depth: number | null; childCount: number; colors: number[] };
+    const containers: ContainerRecord[] = [];
+    const plainRectangles: Array<{ x: number; y: number; width: number; height: number; fillColor: number }> = [];
+    let pendingColors: number[] = [];
+    const makeShape = () => {
+      const shape = {
+        destroy: () => undefined,
+        setOrigin: () => shape,
+        setPosition: () => shape,
+        setSize: () => shape,
+        setFillStyle: () => shape,
+        setStrokeStyle: () => shape,
+        setDepth: () => shape,
+        setRotation: () => shape,
+        setAlpha: () => shape,
+        setVisible: () => shape,
+        setBlendMode: () => shape,
+      };
+      return shape;
+    };
+    const scene = {
+      add: {
+        rectangle: (x: number, y: number, width: number, height: number, fillColor: number) => {
+          plainRectangles.push({ x, y, width, height, fillColor });
+          pendingColors.push(fillColor);
+          return makeShape();
+        },
+        ellipse: () => makeShape(),
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const record = {
+            x: null as number | null,
+            y: null as number | null,
+            depth: null as number | null,
+            childCount: children.length,
+            colors: pendingColors.slice(-children.length),
+          };
+          pendingColors = [];
+          const container = {
+            list: children,
+            destroy: () => undefined,
+            setPosition: (x: number, y: number) => {
+              record.x = x;
+              record.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: (depth: number) => {
+              record.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          containers.push(record);
+          return container;
+        },
+        circle: () => makeShape(),
+        star: () => makeShape(),
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, snapshot);
+
+    const locker = descriptors.hidingSpots.find((spot) => spot.type === "locker");
+    const cover = descriptors.coverObjects.find((object) => object.id === "storage_room_crate" || object.id === "central_low_cover");
+    const lockerContainer = containers.find((container) => container.x === locker?.x && container.y === locker?.y);
+    const coverContainer = containers.find((container) => container.x === cover?.x && container.y === cover?.y);
+
+    expect(lockerContainer?.childCount).toBeGreaterThanOrEqual(7);
+    expect(lockerContainer?.colors).toEqual(expect.arrayContaining([0x566b7f, 0x90a9bf, 0xd7f7ff]));
+    expect(coverContainer?.childCount).toBeGreaterThanOrEqual(6);
+    expect(coverContainer?.colors).toEqual(expect.arrayContaining([0x6b5845, 0xfff0b8]));
+    expect(plainRectangles.some((rect) => rect.x === locker?.x && rect.y === locker?.y && rect.width === 34 && rect.height === 46)).toBe(false);
+  });
+
+  it("recreates cached cover containers when visual dimensions change", () => {
+    const renderer = new GameRenderer();
+    const cover = prisonMap.coverObjects[0];
+    const originalWidth = cover.width;
+    const originalHeight = cover.height;
+    type RectCall = { width: number; height: number };
+    const coverContainers: Array<{ rects: RectCall[]; destroyCount: number; childDestroyCount: number }> = [];
+    let pendingRects: RectCall[] = [];
+    const makeShape = () => {
+      const shape = {
+        destroy: () => undefined,
+        setOrigin: () => shape,
+        setPosition: () => shape,
+        setSize: () => shape,
+        setFillStyle: () => shape,
+        setStrokeStyle: () => shape,
+        setDepth: () => shape,
+        setRotation: () => shape,
+        setAlpha: () => shape,
+        setVisible: () => shape,
+        setBlendMode: () => shape,
+      };
+      return shape;
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, width: number, height: number) => {
+          pendingRects.push({ width, height });
+          return makeShape();
+        },
+        ellipse: () => makeShape(),
+        container: (_x: number, _y: number, children: Array<{ destroy?: () => void }>) => {
+          const rects = pendingRects.slice(-children.length);
+          pendingRects = [];
+          const record = { rects, destroyCount: 0, childDestroyCount: 0 };
+          const container = {
+            list: children,
+            destroy: () => {
+              record.destroyCount += 1;
+            },
+            setPosition: (x: number, y: number) => {
+              if (x === cover.position.x * 64 && y === cover.position.y * 64) {
+                coverContainers.push(record);
+              }
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          children.forEach((child) => {
+            const originalDestroy = child.destroy;
+            child.destroy = () => {
+              record.childDestroyCount += 1;
+              originalDestroy?.();
+            };
+          });
+          return container;
+        },
+        circle: () => makeShape(),
+        star: () => makeShape(),
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    try {
+      renderer.render(scene as never, new GameSimulation().getSnapshot());
+      cover.width = originalWidth + 0.5;
+      cover.height = originalHeight + 0.25;
+      renderer.render(scene as never, new GameSimulation().getSnapshot());
+    } finally {
+      cover.width = originalWidth;
+      cover.height = originalHeight;
+    }
+
+    expect(coverContainers).toHaveLength(2);
+    expect(coverContainers[0].destroyCount).toBe(1);
+    expect(coverContainers[0].childDestroyCount).toBeGreaterThan(0);
+    expect(coverContainers[1].rects[0]).toEqual({
+      width: (originalWidth + 0.5) * 64,
+      height: (originalHeight + 0.25) * 64,
+    });
+  });
+
   it("creates character containers for prisoner dressing instead of flat rectangles", () => {
     const renderer = new GameRenderer();
     const createdContainers: Array<{ depth: number | null; scale: number | null }> = [];
