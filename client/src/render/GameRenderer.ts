@@ -41,11 +41,25 @@ export type CharacterVisualDescriptor = {
   variant: "readable_hybrid";
   species: CharacterSpecies;
   role: "prisoner" | "guard";
-  silhouette: "front" | "side_profile";
+  silhouette: "front" | "side_profile" | "back";
   uniformColor: number;
   accentColor: number;
   outlineColor: number;
   playerHighlight: boolean;
+};
+
+export type PlayerVisualFacing = "up" | "down" | "left" | "right";
+
+export type PlayerRenderState = {
+  facing: PlayerVisualFacing;
+  walkPhase: 0 | 1;
+  moving: boolean;
+};
+
+const defaultPlayerRenderState: PlayerRenderState = {
+  facing: "down",
+  walkPhase: 0,
+  moving: false,
 };
 
 export type KeyVisualDescriptor = {
@@ -111,6 +125,7 @@ type RenderObjects = {
   lights: Phaser.GameObjects.Arc[];
   roomDetails: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Arc>;
   player?: Phaser.GameObjects.Container;
+  playerSilhouette?: CharacterVisualDescriptor["silhouette"];
   guards: Map<string, Phaser.GameObjects.Container>;
   guardSilhouettes: Map<string, CharacterVisualDescriptor["silhouette"]>;
   guardCones: Map<string, Phaser.GameObjects.Graphics>;
@@ -207,6 +222,20 @@ function guardCone(guard: GuardStateSnapshot): VisionConeDescriptor | null {
 
 function spriteFacingX(facing: Vector): 1 | -1 {
   return facing.x < 0 ? -1 : 1;
+}
+
+function playerSilhouette(facing: PlayerVisualFacing): CharacterVisualDescriptor["silhouette"] {
+  if (facing === "up") {
+    return "back";
+  }
+  if (facing === "down") {
+    return "front";
+  }
+  return "side_profile";
+}
+
+function playerScaleX(facing: PlayerVisualFacing): 1 | -1 {
+  return facing === "left" ? -1 : 1;
 }
 
 function setDressingFill(kind: SetDressingKind): number {
@@ -387,8 +416,13 @@ type PixelMatrixSprite = {
   alpha?: Partial<Record<PaintedPixelToken, number>>;
 };
 
-function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
+function createPlayerSprite(
+  scene: Phaser.Scene,
+  visual: CharacterVisualDescriptor,
+): Phaser.GameObjects.Container {
   const hasMask = visual.species === "raccoon";
+  const isBackSilhouette = visual.silhouette === "back";
+  const isSideSilhouette = visual.silhouette === "side_profile";
   const skinColor = visual.species === "possum" ? 0xb8aeb6 : visual.species === "cat" ? 0xb9946b : 0x8d9bab;
   const tailColor = visual.species === "possum" ? 0xd2b7c0 : visual.species === "cat" ? 0x9b7654 : 0x6f7d8d;
   const earHeight = visual.species === "cat" ? 10 : visual.species === "possum" ? 9 : 7;
@@ -397,22 +431,22 @@ function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescript
   const tailHeight = visual.species === "possum" ? 24 : visual.species === "cat" ? 21 : 18;
   const tailRotation = visual.species === "cat" ? -0.12 : -0.3;
   const shadow = scene.add.ellipse(0, 17, 30, 10, 0x081018, 0.24);
-  const tail = addPixelRect(scene, -14, 6, 7, tailHeight, tailColor).setRotation(tailRotation);
+  const tail = addPixelRect(scene, isSideSilhouette ? -16 : -14, 6, 7, tailHeight, tailColor).setRotation(tailRotation);
   tail.setStrokeStyle(2, visual.outlineColor, 0.9);
   const legLeft = addPixelRect(scene, -5, 21, 6, 10, 0x172231);
   const legRight = addPixelRect(scene, 5, 21, 6, 10, 0x172231);
   const armLeft = addPixelRect(scene, -13, 5, 5, 18, skinColor);
   const armRight = addPixelRect(scene, 13, 5, 5, 18, skinColor);
-  const body = addPixelRect(scene, 0, 5, 21, 26, visual.uniformColor);
+  const body = addPixelRect(scene, isSideSilhouette ? 2 : 0, 5, isSideSilhouette ? 17 : 21, 26, visual.uniformColor);
   body.setStrokeStyle(2, visual.outlineColor, 0.96);
-  const stripeA = addPixelRect(scene, 0, -1, 17, 3, visual.accentColor, 0.95);
-  const stripeB = addPixelRect(scene, 0, 8, 17, 3, visual.accentColor, 0.95);
-  const chestHighlight = addPixelRect(scene, 7, 2, 4, 13, 0xfff0b8, 0.92);
+  const stripeA = addPixelRect(scene, isSideSilhouette ? 2 : 0, -1, isSideSilhouette ? 13 : 17, 3, visual.accentColor, 0.95);
+  const stripeB = addPixelRect(scene, isSideSilhouette ? 2 : 0, 8, isSideSilhouette ? 13 : 17, 3, visual.accentColor, 0.95);
+  const chestHighlight = addPixelRect(scene, 7, 2, 4, 13, isBackSilhouette ? 0xd7f7ff : isSideSilhouette ? 0x75e1ff : 0xfff0b8, 0.92);
   const shoulderChipLeft = addPixelRect(scene, -12, -5, 4, 5, 0xffd166, 0.92);
   const shoulderChipRight = addPixelRect(scene, 12, -5, 4, 5, 0xffd166, 0.92);
-  const headRim = addPixelRect(scene, 0, -24, 14, 3, 0xf8fbff, 0.72);
+  const headRim = addPixelRect(scene, isSideSilhouette ? 3 : 0, -24, isSideSilhouette ? 10 : 14, 3, 0xf8fbff, 0.72);
   const playerMark = visual.playerHighlight ? addPixelRect(scene, 0, -28, 12, 3, visual.accentColor, 0.98) : null;
-  const head = addPixelRect(scene, 0, -15, 20, 17, skinColor);
+  const head = addPixelRect(scene, isSideSilhouette ? 3 : 0, -15, isSideSilhouette ? 16 : 20, 17, skinColor);
   head.setStrokeStyle(2, visual.outlineColor, 0.96);
   const earLeft = addPixelRect(scene, -7, -26, earWidth, earHeight, skinColor);
   const earRight = addPixelRect(scene, 7, -26, earWidth, earHeight, skinColor);
@@ -1166,6 +1200,7 @@ export class GameRenderer {
       walls,
       lights,
       roomDetails,
+      playerSilhouette: undefined,
       guards: new Map(),
       guardSilhouettes: new Map(),
       guardCones: new Map(),
@@ -1186,19 +1221,36 @@ export class GameRenderer {
     };
   }
 
-  render(scene: Phaser.Scene, snapshot: SimulationSnapshot): void {
+  render(
+    scene: Phaser.Scene,
+    snapshot: SimulationSnapshot,
+    playerState: PlayerRenderState = defaultPlayerRenderState,
+  ): void {
     if (!this.objects) {
       this.mount(scene);
     }
     const objects = this.objects as RenderObjects;
     const descriptors = this.describe(snapshot);
+    const visualSilhouette = playerSilhouette(playerState.facing);
+    const playerVisual = {
+      ...descriptors.player.visual,
+      silhouette: visualSilhouette,
+    };
 
+    if (objects.player && objects.playerSilhouette !== visualSilhouette) {
+      destroyContainerWithChildren(objects.player);
+      objects.player = undefined;
+      objects.playerSilhouette = undefined;
+    }
     if (!objects.player) {
-      objects.player = createPlayerSprite(scene, descriptors.player.visual);
+      objects.player = createPlayerSprite(scene, playerVisual);
       objects.player.setDepth(18);
+      objects.playerSilhouette = visualSilhouette;
     }
     objects.player.setPosition(descriptors.player.x, descriptors.player.y);
     objects.player.setAlpha(descriptors.player.hidden ? 0.42 : 1);
+    objects.player.setScale(playerScaleX(playerState.facing), 1);
+    objects.player.setDepth(18);
 
     for (const spot of descriptors.hidingSpots) {
       const color = spot.bodyOccupied ? 0x5b3240 : spot.type === "locker" ? 0x566b7f : 0x151a22;

@@ -400,6 +400,277 @@ describe("GameRenderer", () => {
     expect(playerContainer?.colors).toContain(0xfff0b8);
   });
 
+  it("accepts visual-only player render state without changing player descriptor position", () => {
+    const renderer = new GameRenderer();
+    const snapshot = new GameSimulation().getSnapshot();
+    const descriptor = renderer.describe(snapshot).player;
+    const playerContainers: Array<{
+      depth: number | null;
+      scaleX: number | null;
+      x: number | null;
+      y: number | null;
+    }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const containerRecord = {
+            depth: null as number | null,
+            scaleX: null as number | null,
+            x: null as number | null,
+            y: null as number | null,
+          };
+          const container = {
+            list: children,
+            setPosition: (x: number, y: number) => {
+              containerRecord.x = x;
+              containerRecord.y = y;
+              return container;
+            },
+            setScale: (scaleX: number) => {
+              containerRecord.scaleX = scaleX;
+              return container;
+            },
+            setDepth: (depth: number) => {
+              containerRecord.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          playerContainers.push(containerRecord);
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, snapshot, { facing: "left", walkPhase: 1, moving: true });
+
+    const playerContainer = playerContainers.find((container) => container.depth === 18);
+    expect(playerContainer).toMatchObject({
+      depth: 18,
+      scaleX: -1,
+      x: descriptor.x,
+      y: descriptor.y,
+    });
+    expect(renderer.describe(snapshot).player).toEqual(descriptor);
+  });
+
+  it("renders side-profile player geometry with a distinct part placement", () => {
+    const renderer = new GameRenderer();
+    const snapshot = new GameSimulation().getSnapshot();
+    const playerDescriptor = renderer.describe(snapshot).player;
+    type RectCall = { x: number; y: number; width: number; height: number; fillColor: number };
+    const createdPlayers: Array<{ depth: number | null; x: number | null; y: number | null; rects: RectCall[] }> = [];
+    let pendingRects: RectCall[] = [];
+    const makeShape = () => {
+      const shape = {
+        destroy: () => undefined,
+        setOrigin: () => shape,
+        setPosition: () => shape,
+        setSize: () => shape,
+        setFillStyle: () => shape,
+        setStrokeStyle: () => shape,
+        setDepth: () => shape,
+        setRotation: () => shape,
+        setAlpha: () => shape,
+        setVisible: () => shape,
+        setBlendMode: () => shape,
+      };
+      return shape;
+    };
+    const shape = makeShape();
+    const scene = {
+      add: {
+        rectangle: (x: number, y: number, width: number, height: number, fillColor: number) => {
+          pendingRects.push({ x, y, width, height, fillColor });
+          return makeShape();
+        },
+        ellipse: () => shape,
+        container: (_x: number, _y: number, children: Array<{ destroy?: () => void }>) => {
+          const playerRecord = {
+            depth: null as number | null,
+            x: null as number | null,
+            y: null as number | null,
+            rects: pendingRects.slice(-children.length),
+          };
+          pendingRects = [];
+          const container = {
+            list: children,
+            destroy: () => undefined,
+            setPosition: (x: number, y: number) => {
+              playerRecord.x = x;
+              playerRecord.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: (depth: number) => {
+              playerRecord.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          createdPlayers.push(playerRecord);
+          return container;
+        },
+        circle: () => shape,
+        star: () => shape,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, snapshot, { facing: "down", walkPhase: 0, moving: false });
+    renderer.render(scene as never, snapshot, { facing: "left", walkPhase: 0, moving: false });
+    renderer.render(scene as never, snapshot, { facing: "up", walkPhase: 0, moving: false });
+
+    const playerBuilds = createdPlayers.filter(
+      (container) => container.depth === 18 && container.x === playerDescriptor.x && container.y === playerDescriptor.y,
+    );
+    const hasSideOnlyHead = (rects: RectCall[]) =>
+      rects.some((rect) => rect.x === 3 && rect.y === -15 && rect.width === 16 && rect.height === 17);
+
+    expect(playerBuilds).toHaveLength(3);
+    expect(hasSideOnlyHead(playerBuilds[1].rects)).toBe(true);
+    expect(hasSideOnlyHead(playerBuilds[0].rects)).toBe(false);
+    expect(hasSideOnlyHead(playerBuilds[2].rects)).toBe(false);
+  });
+
+  it("rebuilds the player sprite when visual silhouette changes", () => {
+    const renderer = new GameRenderer();
+    const snapshot = new GameSimulation().getSnapshot();
+    const playerDescriptor = renderer.describe(snapshot).player;
+    const destroyedContainers: unknown[] = [];
+    const createdContainers: Array<{ colors: number[]; depth: number | null; x: number | null; y: number | null }> = [];
+    let pendingColors: number[] = [];
+    const rectangle = {
+      destroy: () => undefined,
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: Array<{ destroy?: () => void }>) => {
+          const colors = pendingColors.slice(-children.length);
+          pendingColors = [];
+          const containerRecord = {
+            colors,
+            depth: null as number | null,
+            x: null as number | null,
+            y: null as number | null,
+          };
+          const container = {
+            list: children,
+            destroy: () => {
+              destroyedContainers.push(container);
+            },
+            setPosition: (x: number, y: number) => {
+              containerRecord.x = x;
+              containerRecord.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: (depth: number) => {
+              containerRecord.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          createdContainers.push(containerRecord);
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, snapshot, { facing: "down", walkPhase: 0, moving: false });
+    renderer.render(scene as never, snapshot, { facing: "left", walkPhase: 0, moving: false });
+    renderer.render(scene as never, snapshot, { facing: "up", walkPhase: 0, moving: false });
+
+    const createdPlayerColors = createdContainers
+      .filter((container) => container.depth === 18 && container.x === playerDescriptor.x && container.y === playerDescriptor.y)
+      .map((container) => container.colors);
+
+    expect(destroyedContainers.length).toBeGreaterThanOrEqual(1);
+    expect(createdPlayerColors[0]).toContain(0xfff0b8);
+    expect(createdPlayerColors[0]).not.toContain(0xd7f7ff);
+    expect(createdPlayerColors[1]).toContain(0x75e1ff);
+    expect(createdPlayerColors[1]).not.toContain(0xfff0b8);
+    expect(createdPlayerColors[1]).not.toContain(0xd7f7ff);
+    expect(createdPlayerColors.slice(2).some((colors) => colors.includes(0xd7f7ff))).toBe(true);
+  });
+
   it("renders guards with cold security contrast chips distinct from the player", () => {
     const renderer = new GameRenderer();
     const snapshot = new GameSimulation().getSnapshot();
