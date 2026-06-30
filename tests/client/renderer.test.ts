@@ -1728,6 +1728,91 @@ describe("GameRenderer", () => {
     });
   });
 
+  it("renders doors as pixel prop containers with hinges handles and lock cues", () => {
+    const renderer = new GameRenderer();
+    const snapshot = new GameSimulation().getSnapshot();
+    const descriptors = renderer.describe(snapshot);
+    const doorContainers: Array<{ x: number | null; y: number | null; rotation: number | null; colors: number[]; childCount: number }> = [];
+    let pendingColors: number[] = [];
+    const makeShape = () => {
+      const shape = {
+        destroy: () => undefined,
+        setOrigin: () => shape,
+        setPosition: () => shape,
+        setSize: () => shape,
+        setFillStyle: () => shape,
+        setStrokeStyle: () => shape,
+        setDepth: () => shape,
+        setRotation: () => shape,
+        setAlpha: () => shape,
+        setVisible: () => shape,
+        setBlendMode: () => shape,
+      };
+      return shape;
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return makeShape();
+        },
+        ellipse: () => makeShape(),
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const record = { x: null as number | null, y: null as number | null, rotation: null as number | null, colors: pendingColors.slice(-children.length), childCount: children.length };
+          pendingColors = [];
+          const container = {
+            list: children,
+            destroy: () => undefined,
+            setOrigin: () => container,
+            setPosition: (x: number, y: number) => {
+              record.x = x;
+              record.y = y;
+              return container;
+            },
+            setSize: () => container,
+            setFillStyle: () => container,
+            setStrokeStyle: () => container,
+            setDepth: () => container,
+            setRotation: (rotation: number) => {
+              record.rotation = rotation;
+              return container;
+            },
+            setScale: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+          };
+          doorContainers.push(record);
+          return container;
+        },
+        circle: () => makeShape(),
+        star: () => makeShape(),
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, snapshot);
+
+    const door = descriptors.doors.find((candidate) => candidate.id === "security_room_door") ?? descriptors.doors[0];
+    const rendered = doorContainers.find(
+      (container) => container.x === door.hingeX && container.y === door.hingeY && container.colors.includes(0x5a3a28),
+    );
+    expect(rendered?.childCount).toBeGreaterThanOrEqual(6);
+    expect(rendered?.colors).toEqual(expect.arrayContaining([0x5a3a28, 0xff7a6f, 0xfff0b8]));
+    expect(rendered?.rotation).toBe(door.visualRotation);
+  });
+
   it("uses a visibly different render color for general key drops", () => {
     const simulation = new GameSimulation({
       guardOverrides: [{ id: "guard-1", position: { x: 18.5, y: 4.5 }, facing: { x: 1, y: 0 } }],
@@ -1816,15 +1901,28 @@ describe("GameRenderer", () => {
           return makeShape(labelRectangle(x, y, width, height));
         },
         ellipse: () => makeShape("other"),
-        container: (_x: number, _y: number, children: unknown[]) => ({
-          list: children,
-          setPosition: () => undefined,
-          setScale: () => undefined,
-          setDepth: () => undefined,
-          setAlpha: () => undefined,
-          setVisible: () => undefined,
-          setRotation: () => undefined,
-        }),
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const container = {
+            list: children,
+            setPosition: (x: number, y: number) => {
+              if (
+                descriptors.doors.some((door) => !door.unlocked && matchesPosition(x, y, { x: door.hingeX, y: door.hingeY }))
+              ) {
+                const [slab] = children as Array<{ label?: InteractableLabel }>;
+                if (slab) {
+                  slab.label = "lockedDoor";
+                }
+              }
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          return container;
+        },
         circle: (x: number, y: number) => {
           return makeShape(descriptors.pebbles.some((pebble) => matchesPosition(x, y, pebble)) ? "pebble" : "other");
         },

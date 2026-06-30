@@ -138,7 +138,8 @@ type RenderObjects = {
   pebbles: Map<string, Phaser.GameObjects.Arc>;
   weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
   healingPickups: Map<string, Phaser.GameObjects.Rectangle>;
-  doors: Map<string, Phaser.GameObjects.Rectangle>;
+  doors: Map<string, Phaser.GameObjects.Container>;
+  doorVisualStates: Map<string, string>;
   doorKeyPickups: Map<string, Phaser.GameObjects.Star>;
   aimLine?: Phaser.GameObjects.Graphics;
   aimMarker?: Phaser.GameObjects.Arc;
@@ -686,6 +687,37 @@ function createCoverSprite(scene: Phaser.Scene, width: number, height: number): 
   const shadow = addPixelRect(scene, 0, height * 0.5, width * 0.76, Math.max(4, height * 0.14), 0x101820, 0.38);
 
   return scene.add.container(0, 0, [body, top, boardChip, strap, leftCap, rightCap, cornerNotch, shadow]);
+}
+
+function createDoorSprite(scene: Phaser.Scene, door: RenderDescriptors["doors"][number]): Phaser.GameObjects.Container {
+  const baseColor = door.open ? 0x51745a : door.unlocked ? 0x8f5f34 : 0x5a3a28;
+  const cueColor = door.unlocked ? 0xfff0b8 : 0xff7a6f;
+  const slab = addPixelRect(scene, door.width / 2, 0, door.width, door.height, baseColor, door.open ? 0.72 : 0.98);
+  slab.setStrokeStyle(4, cueColor, 0.9);
+  const hinge = addPixelRect(scene, 0, 0, Math.max(5, door.width * 0.08), door.height * 1.18, 0x2f2721, 0.94);
+  const handle = addPixelRect(
+    scene,
+    door.width * 0.78,
+    0,
+    Math.max(5, door.width * 0.08),
+    Math.max(5, door.height * 0.42),
+    0xfff0b8,
+    0.95,
+  );
+  const lockPlate = addPixelRect(
+    scene,
+    door.width * 0.64,
+    0,
+    Math.max(6, door.width * 0.1),
+    Math.max(5, door.height * 0.5),
+    cueColor,
+    0.86,
+  );
+  const topPanel = addPixelRect(scene, door.width * 0.34, -door.height * 0.24, door.width * 0.3, Math.max(4, door.height * 0.18), 0xb28b63, 0.5);
+  const bottomPanel = addPixelRect(scene, door.width * 0.34, door.height * 0.24, door.width * 0.3, Math.max(4, door.height * 0.18), 0x3b3028, 0.45);
+  const lowerGap = addPixelRect(scene, door.width * 0.86, door.height * 0.36, Math.max(4, door.width * 0.12), Math.max(4, door.height * 0.12), 0x101820, 0.38);
+
+  return scene.add.container(0, 0, [slab, hinge, handle, lockPlate, topPanel, bottomPanel, lowerGap]);
 }
 
 function createSetDressingSprite(
@@ -1279,6 +1311,7 @@ export class GameRenderer {
       weaponPickups: new Map(),
       healingPickups: new Map(),
       doors: new Map(),
+      doorVisualStates: new Map(),
       doorKeyPickups: new Map(),
       aimLine: undefined,
       aimMarker: undefined,
@@ -1423,16 +1456,22 @@ export class GameRenderer {
     }
 
     for (const door of descriptors.doors) {
-      const existing =
-        objects.doors.get(door.id) ??
-        scene.add.rectangle(door.hingeX, door.hingeY, door.width, door.height, 0x8f5f34, 0.98);
-      existing.setOrigin(door.originX, door.originY);
-      existing.setPosition(door.hingeX, door.hingeY);
-      existing.setSize(door.width, door.height);
-      existing.setRotation(door.visualRotation);
-      existing.setFillStyle(door.open ? 0x51745a : door.unlocked ? 0x8f5f34 : 0x5a3a28, door.open ? 0.72 : 0.98);
-      existing.setStrokeStyle(4, door.unlocked ? 0xfff0b8 : 0xff7a6f, 0.9);
-      objects.doors.set(door.id, existing);
+      let container = objects.doors.get(door.id);
+      const visualState = `${door.open}:${door.unlocked}:${door.visualRotation}:${door.width}:${door.height}`;
+      if (container && objects.doorVisualStates.get(door.id) !== visualState) {
+        destroyContainerWithChildren(container);
+        objects.doors.delete(door.id);
+        objects.doorVisualStates.delete(door.id);
+        container = undefined;
+      }
+      if (!container) {
+        container = createDoorSprite(scene, door);
+        objects.doors.set(door.id, container);
+        objects.doorVisualStates.set(door.id, visualState);
+      }
+      container.setPosition(door.hingeX, door.hingeY);
+      container.setRotation(door.visualRotation);
+      container.setDepth(4);
     }
 
     for (const pickup of descriptors.doorKeyPickups) {
