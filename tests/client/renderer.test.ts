@@ -984,7 +984,8 @@ describe("GameRenderer", () => {
     const descriptors = renderer.describe(snapshot);
     type InteractableLabel = "pebble" | "weapon" | "healing" | "lockedDoor" | "mainKey" | "exit" | "other";
     type StrokeCall = { lineWidth: number; strokeColor: number; alpha?: number };
-    const shapes: Array<{ label: InteractableLabel; strokes: StrokeCall[] }> = [];
+    type FillCall = { fillColor: number; alpha?: number };
+    const shapes: Array<{ label: InteractableLabel; strokes: StrokeCall[]; fills: FillCall[] }> = [];
     const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
     const matchesPosition = (x: number, y: number, target: { x: number; y: number }) =>
       near(x, target.x) && near(y, target.y);
@@ -1017,10 +1018,14 @@ describe("GameRenderer", () => {
       const shape = {
         label,
         strokes: [] as StrokeCall[],
+        fills: [] as FillCall[],
         setOrigin: () => shape,
         setPosition: () => shape,
         setSize: () => shape,
-        setFillStyle: () => shape,
+        setFillStyle: (fillColor: number, alpha?: number) => {
+          shape.fills.push({ fillColor, alpha });
+          return shape;
+        },
         setStrokeStyle: (lineWidth: number, strokeColor: number, alpha?: number) => {
           shape.strokes.push({ lineWidth, strokeColor, alpha });
           return shape;
@@ -1079,14 +1084,22 @@ describe("GameRenderer", () => {
       alpha: 0.62,
     });
     expect(shapes.find((shape) => shape.label === "weapon")?.strokes).toContainEqual({
-      lineWidth: 4,
+      lineWidth: 5,
       strokeColor: 0xfff0b8,
-      alpha: 0.86,
+      alpha: 0.92,
+    });
+    expect(shapes.find((shape) => shape.label === "weapon")?.fills).toContainEqual({
+      fillColor: 0xd5dde5,
+      alpha: 0.98,
     });
     expect(shapes.find((shape) => shape.label === "healing")?.strokes).toContainEqual({
-      lineWidth: 4,
+      lineWidth: 5,
       strokeColor: 0xcfffd5,
-      alpha: 0.9,
+      alpha: 0.94,
+    });
+    expect(shapes.find((shape) => shape.label === "healing")?.fills).toContainEqual({
+      fillColor: 0x72d18b,
+      alpha: 0.98,
     });
     expect(shapes.find((shape) => shape.label === "lockedDoor")?.strokes).toContainEqual({
       lineWidth: 4,
@@ -1094,14 +1107,14 @@ describe("GameRenderer", () => {
       alpha: 0.9,
     });
     expect(shapes.find((shape) => shape.label === "mainKey")?.strokes).toContainEqual({
-      lineWidth: 4,
-      strokeColor: 0xd7f7ff,
-      alpha: 0.92,
+      lineWidth: 5,
+      strokeColor: 0xfff0b8,
+      alpha: 0.94,
     });
     expect(shapes.find((shape) => shape.label === "exit")?.strokes).toContainEqual({
-      lineWidth: 4,
-      strokeColor: 0xfff0b8,
-      alpha: 0.88,
+      lineWidth: 5,
+      strokeColor: 0xd7f7ff,
+      alpha: 0.9,
     });
   });
 

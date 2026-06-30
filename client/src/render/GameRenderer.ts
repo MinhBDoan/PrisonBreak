@@ -1263,21 +1263,23 @@ export class GameRenderer {
     for (const pickup of descriptors.weaponPickups) {
       const existing =
         objects.weaponPickups.get(pickup.id) ??
-        scene.add.rectangle(pickup.x, pickup.y, 26, 12, 0x9aa7b4, 0.96);
+        scene.add.rectangle(pickup.x, pickup.y, 26, 12, 0xd5dde5, 0.98);
       existing.setPosition(pickup.x, pickup.y);
       existing.setVisible(!pickup.collected);
       existing.setRotation(-0.18);
-      existing.setStrokeStyle(4, 0xfff0b8, 0.86);
+      existing.setFillStyle(0xd5dde5, 0.98);
+      existing.setStrokeStyle(5, 0xfff0b8, 0.92);
       objects.weaponPickups.set(pickup.id, existing);
     }
 
     for (const pickup of descriptors.healingPickups) {
       const existing =
         objects.healingPickups.get(pickup.id) ??
-        scene.add.rectangle(pickup.x, pickup.y, 24, 16, 0xcfffd5, 0.96);
+        scene.add.rectangle(pickup.x, pickup.y, 24, 16, 0x72d18b, 0.98);
       existing.setPosition(pickup.x, pickup.y);
       existing.setVisible(!pickup.collected);
-      existing.setStrokeStyle(4, 0xcfffd5, 0.9);
+      existing.setFillStyle(0x72d18b, 0.98);
+      existing.setStrokeStyle(5, 0xcfffd5, 0.94);
       objects.healingPickups.set(pickup.id, existing);
     }
 
@@ -1317,7 +1319,7 @@ export class GameRenderer {
     }
     objects.key.setVisible(!descriptors.objectives.key.collected);
     objects.key.setFillStyle(descriptors.objectives.key.color, 0.96);
-    objects.key.setStrokeStyle(4, descriptors.objectives.key.strokeColor, 0.92);
+    objects.key.setStrokeStyle(5, 0xfff0b8, 0.94);
 
     if (!objects.exit) {
       objects.exit = scene.add.rectangle(
@@ -1329,7 +1331,7 @@ export class GameRenderer {
       );
     }
     objects.exit.setFillStyle(descriptors.objectives.exit.unlocked ? 0x5fa76c : 0x7a4f2a, 1);
-    objects.exit.setStrokeStyle(4, descriptors.objectives.exit.unlocked ? 0xd7f7ff : 0xfff0b8, 0.88);
+    objects.exit.setStrokeStyle(5, descriptors.objectives.exit.unlocked ? 0xcfffd5 : 0xd7f7ff, 0.9);
 
     const liveGuardIds = new Set<string>();
     const draggedGuard = descriptors.guards.find((guard) => guard.dragging && !guard.hiddenBody);
