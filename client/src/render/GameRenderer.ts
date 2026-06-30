@@ -702,75 +702,76 @@ function createSetDressingSprite(
     parts.push(part);
     return part;
   };
+  const notch = (x: number, y: number, partWidth: number, partHeight: number, color: number, alpha = 0.96) =>
+    addPart(x, y, partWidth, partHeight, color, setDressingStroke(kind), alpha);
+  const cap = (x: number, y: number, partWidth: number, partHeight: number, color: number) =>
+    addPart(x, y, partWidth, partHeight, color, setDressingStroke(kind), 0.9);
 
   if (kind === "bars") {
-    return createPixelMatrixSprite({
-      rows: [
-        "OOOOOOOOOOOO",
-        ".M.M.M.M.M..",
-        ".M.M.M.M.M..",
-        ".M.M.M.M.M..",
-        "OOOOOOOOOOOO",
-      ],
-      palette: {
-        O: 0x0b1118,
-        M: 0xb8c6d1,
-        D: 0x263341,
-        F: 0x2d3b49,
-        G: 0x75e1ff,
-        W: 0xffd166,
-        S: 0x111820,
-        H: 0xe2e8ef,
-      },
-    });
+    addPart(0, -height * 0.42, width, Math.max(4, height * 0.22), 0xd5dde5, 0xeef6ff, 0.9);
+    addPart(0, height * 0.42, width, Math.max(4, height * 0.22), 0x6a7d8f, 0xd5dde5, 0.88);
+    for (const offset of [-0.36, -0.12, 0.12, 0.36]) {
+      addPart(width * offset, 0, Math.max(3, width * 0.06), height * 1.12, 0x9aa7b4, 0xd5dde5, 0.92);
+    }
+    cap(-width * 0.48, 0, Math.max(3, width * 0.08), height * 1.2, 0x44515f);
+    cap(width * 0.48, 0, Math.max(3, width * 0.08), height * 1.2, 0x44515f);
+    addPart(0, -height * 0.48, width * 0.78, Math.max(3, height * 0.08), 0x0b1118, 0xd5dde5, 0.82);
+    for (const offset of [-0.36, -0.12, 0.12, 0.36]) {
+      addPart(width * offset, -height * 0.2, Math.max(3, width * 0.05), height * 0.18, 0xb8c6d1, 0xeef6ff, 0.94);
+      addPart(width * offset, height * 0.22, Math.max(3, width * 0.05), height * 0.18, 0xb8c6d1, 0xeef6ff, 0.94);
+    }
   } else if (kind === "cot") {
-    return createPixelMatrixSprite({
-      rows: [
-        "OOOOOOOOOOOO",
-        "OMHHHMMMMMMO",
-        "OMHHHFFFFFFO",
-        "OMHHHFFFFFFO",
-        "OMMMMFFFFFFO",
-        "OSSSSSSSSSSO",
-        "..S......S..",
-        "..S......S..",
-      ],
-      palette: {
-        O: 0x111820,
-        M: 0x7f93a8,
-        D: 0x3e5364,
-        F: 0x2d3b49,
-        G: 0x75e1ff,
-        W: 0xffd166,
-        S: 0x111820,
-        H: 0xd6dde4,
-      },
-      alpha: { S: 0.88 },
-    });
+    addPart(0, 0, width * 0.92, height * 0.7, 0x475766, 0x7f93a8, 0.96);
+    addPart(-width * 0.26, -height * 0.08, width * 0.28, height * 0.42, 0xd7f7ff, 0xf8fbff, 0.92);
+    addPart(width * 0.17, height * 0.02, width * 0.42, height * 0.44, 0xf28c38, 0xffd166, 0.95);
+    notch(-width * 0.42, -height * 0.4, width * 0.12, height * 0.2, 0x172231, 0.9);
+    notch(width * 0.42, -height * 0.4, width * 0.12, height * 0.2, 0x172231, 0.9);
+    notch(-width * 0.42, height * 0.42, width * 0.12, height * 0.18, 0x172231, 0.9);
+    notch(width * 0.42, height * 0.42, width * 0.12, height * 0.18, 0x172231, 0.9);
+    addPart(0, height * 0.46, width * 0.74, Math.max(3, height * 0.12), 0x101820, 0x293341, 0.5);
+    addPart(0, -height * 0.34, width * 0.82, Math.max(3, height * 0.08), 0x7f93a8, 0xd6dde4, 0.88);
+    addPart(0, height * 0.28, width * 0.78, Math.max(3, height * 0.08), 0x7f93a8, 0xd6dde4, 0.88);
+    addPart(-width * 0.34, -height * 0.04, width * 0.1, height * 0.3, 0xd6dde4, 0xf8fbff, 0.86);
+    addPart(width * 0.02, -height * 0.02, width * 0.1, height * 0.36, 0x2d3b49, 0x7f93a8, 0.88);
+    addPart(width * 0.32, -height * 0.02, width * 0.1, height * 0.34, 0x2d3b49, 0x7f93a8, 0.88);
+    for (const xOffset of [-0.34, -0.18, 0.02, 0.18, 0.34]) {
+      addPart(width * xOffset, height * 0.2, width * 0.07, height * 0.08, 0xf28c38, 0xffd166, 0.88);
+    }
+    for (const xOffset of [-0.34, -0.12, 0.12, 0.34]) {
+      addPart(width * xOffset, -height * 0.24, width * 0.07, height * 0.08, 0xd7f7ff, 0xf8fbff, 0.82);
+    }
+    for (const xOffset of [-0.44, 0.44]) {
+      addPart(width * xOffset, 0, width * 0.07, height * 0.52, 0x111820, 0x7f93a8, 0.85);
+    }
+    addPart(width * 0.43, height * 0.2, width * 0.08, height * 0.08, 0xffd166, 0xfff0b8, 0.8);
+    addPart(-width * 0.43, height * 0.2, width * 0.08, height * 0.08, 0xffd166, 0xfff0b8, 0.8);
+    addPart(0, 0, width * 0.06, height * 0.56, 0x7f93a8, 0xd6dde4, 0.7);
   } else if (kind === "toilet") {
-    return createPixelMatrixSprite({
-      rows: [
-        "..OOOO...",
-        "..OHHHO..",
-        "..OMMMO..",
-        ".OOHHHOO.",
-        "OHHMMMHO.",
-        "OHMMSMHO.",
-        ".OSSSSO..",
-        "..O..O...",
-      ],
-      palette: {
-        O: 0x7f93a8,
-        M: 0x91a8b6,
-        D: 0xc8d3dc,
-        F: 0x2d3b49,
-        G: 0x75e1ff,
-        W: 0xffd166,
-        S: 0x111820,
-        H: 0xe9f1f6,
-      },
-      alpha: { S: 0.72 },
-    });
+    addPart(0, -height * 0.28, width * 0.58, height * 0.34, 0xc8d3dc, 0xf0f6fa, 0.96);
+    addPart(0, height * 0.08, width * 0.76, height * 0.5, 0xf0f6fa, 0x6a7d8f, 0.96);
+    addPart(0, height * 0.08, width * 0.38, height * 0.24, 0x6a7d8f, 0xd7f7ff, 0.76);
+    addPart(-width * 0.26, height * 0.36, width * 0.18, height * 0.2, 0x44515f, 0x9aa7b4, 0.85);
+    addPart(width * 0.28, -height * 0.44, width * 0.16, height * 0.22, 0xd7f7ff, 0xf0f6fa, 0.82);
+    addPart(-width * 0.34, -height * 0.12, width * 0.18, height * 0.24, 0xf0f6fa, 0xd7f7ff, 0.88);
+    addPart(0, height * 0.5, width * 0.6, Math.max(3, height * 0.1), 0x101820, 0x293341, 0.45);
+    addPart(0, -height * 0.28, width * 0.34, height * 0.12, 0xe9f1f6, 0xf8fbff, 0.88);
+    addPart(0, height * 0.02, width * 0.5, height * 0.12, 0xe9f1f6, 0xf8fbff, 0.9);
+    addPart(0, height * 0.18, width * 0.3, height * 0.12, 0x91a8b6, 0xd7f7ff, 0.82);
+    for (const xOffset of [-0.24, 0.24]) {
+      addPart(width * xOffset, height * 0.1, width * 0.12, height * 0.32, 0xe9f1f6, 0xf8fbff, 0.84);
+      addPart(width * xOffset, -height * 0.34, width * 0.1, height * 0.16, 0x91a8b6, 0xd7f7ff, 0.78);
+    }
+    for (const xOffset of [-0.26, 0, 0.26]) {
+      addPart(width * xOffset, height * 0.36, width * 0.08, height * 0.12, 0x111820, 0x6a7d8f, 0.72);
+    }
+    for (const yOffset of [-0.42, -0.2, 0.28]) {
+      addPart(width * 0.38, height * yOffset, width * 0.08, height * 0.12, 0xe9f1f6, 0xf8fbff, 0.74);
+      addPart(-width * 0.38, height * yOffset, width * 0.08, height * 0.12, 0x91a8b6, 0xd7f7ff, 0.72);
+    }
+    addPart(0, -height * 0.48, width * 0.18, height * 0.08, 0x6a7d8f, 0xd7f7ff, 0.72);
+    addPart(0, height * 0.42, width * 0.18, height * 0.08, 0xf0f6fa, 0xd7f7ff, 0.76);
+    addPart(width * 0.18, height * 0.44, width * 0.1, height * 0.08, 0x91a8b6, 0xd7f7ff, 0.72);
+    addPart(-width * 0.18, height * 0.44, width * 0.1, height * 0.08, 0xe9f1f6, 0xf8fbff, 0.72);
   } else if (kind === "desk") {
     addPart(0, 0, width, height, 0x4d3f34, 0x9b7459, 0.96);
     addPart(0, -height * 0.24, width * 0.86, Math.max(5, height * 0.18), 0x173142, 0x6bd3ff, 0.88);
@@ -778,99 +779,85 @@ function createSetDressingSprite(
     addPart(width * 0.26, height * 0.2, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
     addPart(-width * 0.18, -height * 0.3, width * 0.16, Math.max(4, height * 0.16), 0x75e1ff, 0xd7f7ff, 0.82);
     addPart(width * 0.18, -height * 0.3, width * 0.16, Math.max(4, height * 0.16), 0xff5f56, 0xffb3b0, 0.82);
+    addPart(0, -height * 0.3, width * 0.12, Math.max(4, height * 0.14), 0x6bd3ff, 0xd7f7ff, 0.8);
   } else if (kind === "monitor") {
-    return createPixelMatrixSprite({
-      rows: [
-        "OOOOOOOOOOOO",
-        "OGGGODDDOWWO",
-        "OGGGODDDOWWO",
-        "OGGGOGGGO..O",
-        "OOOOOOOOOOOO",
-        "...SSSSSS...",
-      ],
-      palette: {
-        O: 0x173142,
-        M: 0x3d4650,
-        D: 0x2bc3ff,
-        F: 0x2d3b49,
-        G: 0x75e1ff,
-        W: 0xff5f56,
-        S: 0x111820,
-        H: 0xd7f7ff,
-      },
-      alpha: { G: 0.9, D: 0.86, W: 0.82 },
-    });
+    addPart(0, 0, width, height * 0.82, 0x173142, 0x6bd3ff, 0.95);
+    addPart(-width * 0.26, -height * 0.08, width * 0.26, height * 0.36, 0x75e1ff, 0xd7f7ff, 0.92);
+    addPart(0, -height * 0.08, width * 0.22, height * 0.36, 0x2bc3ff, 0xd7f7ff, 0.86);
+    addPart(width * 0.25, -height * 0.08, width * 0.2, height * 0.36, 0xd7f7ff, 0xf8fbff, 0.8);
+    addPart(width * 0.36, height * 0.2, width * 0.1, height * 0.16, 0xff5f56, 0xffb3b0, 0.82);
+    addPart(0, height * 0.48, width * 0.54, Math.max(4, height * 0.12), 0x111820, 0x3d4650, 0.88);
+    for (const xOffset of [-0.34, -0.2, -0.06, 0.08, 0.22, 0.36]) {
+      addPart(width * xOffset, height * 0.28, width * 0.06, height * 0.12, 0xd7f7ff, 0xf8fbff, 0.74);
+    }
+    for (const xOffset of [-0.32, -0.16, 0, 0.16, 0.32]) {
+      addPart(width * xOffset, -height * 0.3, width * 0.08, height * 0.08, 0x75e1ff, 0xd7f7ff, 0.8);
+    }
+    for (const xOffset of [-0.28, -0.1, 0.1, 0.28]) {
+      addPart(width * xOffset, height * 0.06, width * 0.08, height * 0.1, 0x173142, 0x6bd3ff, 0.86);
+    }
+    addPart(-width * 0.42, 0, width * 0.06, height * 0.66, 0x173142, 0x6bd3ff, 0.9);
+    addPart(width * 0.42, 0, width * 0.06, height * 0.66, 0x173142, 0x6bd3ff, 0.9);
   } else if (kind === "weapon_rack") {
-    return createPixelMatrixSprite({
-      rows: [
-        "OOOOOOOOOOO",
-        "O..M..M..O.",
-        "O.M.M.M.MO.",
-        "O.MMMWMMMO.",
-        "OWWWWWWWWO.",
-        "O..S..S..O.",
-        "OOOOOOOOOOO",
-      ],
-      palette: {
-        O: 0x3d4650,
-        M: 0xc7d1db,
-        D: 0x8090a0,
-        F: 0x2d3b49,
-        G: 0x75e1ff,
-        W: 0xffd166,
-        S: 0x111820,
-        H: 0xfff0b8,
-      },
-      alpha: { W: 0.76 },
-    });
+    addPart(0, 0, width * 0.9, height * 0.72, 0x3d4650, 0xffd166, 0.88);
+    addPart(0, -height * 0.3, width * 0.82, Math.max(4, height * 0.12), 0xffd166, 0xfff0b8, 0.78);
+    addPart(0, height * 0.24, width * 0.82, Math.max(4, height * 0.12), 0x111820, 0xc7d1db, 0.9);
+    addPart(-width * 0.28, -height * 0.02, Math.min(6, width * 0.08), height * 0.62, 0xc7d1db, 0xfff0b8, 0.96);
+    addPart(-width * 0.06, 0, Math.min(6, width * 0.08), height * 0.7, 0x8090a0, 0xfff0b8, 0.94).setRotation(0.22);
+    addPart(width * 0.18, 0, Math.min(6, width * 0.08), height * 0.66, 0xc7d1db, 0xfff0b8, 0.96).setRotation(-0.18);
+    addPart(width * 0.34, -height * 0.1, Math.min(5, width * 0.07), height * 0.44, 0xffd166, 0xfff0b8, 0.9);
+    notch(-width * 0.4, height * 0.12, width * 0.1, height * 0.18, 0x111820, 0.72);
+    for (const xOffset of [-0.34, -0.18, 0, 0.18, 0.34]) {
+      addPart(width * xOffset, -height * 0.34, width * 0.07, height * 0.14, 0xffd166, 0xfff0b8, 0.78);
+      addPart(width * xOffset, height * 0.34, width * 0.07, height * 0.14, 0x111820, 0xc7d1db, 0.84);
+    }
+    addPart(-width * 0.42, 0, width * 0.06, height * 0.62, 0x3d4650, 0xffd166, 0.9);
+    addPart(width * 0.42, 0, width * 0.06, height * 0.62, 0x3d4650, 0xffd166, 0.9);
+    addPart(-width * 0.18, height * 0.04, Math.min(6, width * 0.08), height * 0.4, 0xc7d1db, 0xfff0b8, 0.94).setRotation(-0.28);
+    addPart(width * 0.04, -height * 0.02, Math.min(6, width * 0.08), height * 0.36, 0xc7d1db, 0xfff0b8, 0.94).setRotation(0.28);
+    addPart(-width * 0.32, 0, 4, 14, 0xc7d1db, 0xfff0b8, 0.96);
+    addPart(width * 0.28, 0, 4, 14, 0xffd166, 0xfff0b8, 0.9);
   } else if (kind === "supply_shelf") {
-    return createPixelMatrixSprite({
-      rows: [
-        "OOOOOOOOOOOO",
-        "OM..W..D..MO",
-        "OMMMMMMMMMMO",
-        "OM..F..H..MO",
-        "OMMMMMMMMMMO",
-        "OM.WWW.DD.MO",
-        "OM........MO",
-        "OOOOOOOOOOOO",
-      ],
-      palette: {
-        O: 0x5f4938,
-        M: 0x2f2721,
-        D: 0x566b7f,
-        F: 0xcfffd5,
-        G: 0x75e1ff,
-        W: 0xd6a04f,
-        S: 0x111820,
-        H: 0xcfffd5,
-      },
-      alpha: { F: 0.78, H: 0.72 },
-    });
+    addPart(0, 0, width, height, 0x5f4938, 0xb28b63, 0.86);
+    addPart(0, -height * 0.34, width * 0.88, Math.max(4, height * 0.12), 0x2f2721, 0xb28b63, 0.94);
+    addPart(0, 0, width * 0.9, Math.max(4, height * 0.1), 0x2f2721, 0xb28b63, 0.94);
+    addPart(0, height * 0.34, width * 0.88, Math.max(4, height * 0.12), 0x2f2721, 0xb28b63, 0.94);
+    addPart(-width * 0.43, 0, width * 0.08, height * 0.88, 0x2f2721, 0xb28b63, 0.96);
+    addPart(width * 0.43, 0, width * 0.08, height * 0.88, 0x2f2721, 0xb28b63, 0.96);
+    addPart(-width * 0.25, -height * 0.18, width * 0.18, height * 0.2, 0xd6a04f, 0xfff0b8, 0.9);
+    addPart(0, -height * 0.18, width * 0.16, height * 0.2, 0x566b7f, 0xd7f7ff, 0.88);
+    addPart(width * 0.24, -height * 0.18, width * 0.18, height * 0.2, 0xcfffd5, 0x8fd694, 0.78);
+    addPart(-width * 0.22, height * 0.18, width * 0.22, height * 0.22, 0xfff0b8, 0xd6a04f, 0.82);
+    addPart(width * 0.16, height * 0.18, width * 0.24, height * 0.22, 0x8fd694, 0xcfffd5, 0.84);
+    for (const xOffset of [-0.3, -0.1, 0.12, 0.32]) {
+      addPart(width * xOffset, -height * 0.34, width * 0.08, height * 0.12, 0xb28b63, 0xfff0b8, 0.72);
+      addPart(width * xOffset, 0, width * 0.08, height * 0.1, 0xb28b63, 0xfff0b8, 0.72);
+      addPart(width * xOffset, height * 0.34, width * 0.08, height * 0.12, 0xb28b63, 0xfff0b8, 0.72);
+    }
+    for (const xOffset of [-0.34, -0.12, 0.1, 0.3]) {
+      addPart(width * xOffset, height * 0.02, width * 0.1, height * 0.12, 0xcfffd5, 0x8fd694, 0.74);
+    }
+    addPart(-width * 0.34, height * 0.2, width * 0.1, height * 0.12, 0x566b7f, 0xd7f7ff, 0.82);
+    addPart(width * 0.34, height * 0.2, width * 0.1, height * 0.12, 0xd6a04f, 0xfff0b8, 0.82);
+    addPart(0, -height * 0.02, width * 0.08, height * 0.82, 0x2f2721, 0xb28b63, 0.88);
   } else if (kind === "supply_boxes") {
-    return createPixelMatrixSprite({
-      rows: [
-        "..OOOOO....",
-        ".OHHHHO....",
-        ".OWWWWO....",
-        "OOOODDDOO..",
-        "OWWWWDDDO..",
-        "OFFFFOO....",
-        "OFFHFO.....",
-        "OOOOO......",
-      ],
-      palette: {
-        O: 0x8b5f3c,
-        M: 0x5f4938,
-        D: 0xb28b63,
-        F: 0xd6a04f,
-        G: 0x75e1ff,
-        W: 0xffefb0,
-        S: 0x111820,
-        H: 0x566b7f,
-      },
-      alpha: { W: 0.78, H: 0.9 },
-    });
+    addPart(-width * 0.2, -height * 0.16, width * 0.48, height * 0.44, 0x8b5f3c, 0xb28b63, 0.94);
+    addPart(-width * 0.2, -height * 0.28, width * 0.36, height * 0.16, 0xfff0b8, 0xd6a04f, 0.78);
+    addPart(width * 0.2, height * 0.08, width * 0.46, height * 0.5, 0xb28b63, 0xfff0b8, 0.94);
+    addPart(width * 0.2, -height * 0.08, width * 0.22, height * 0.16, 0x566b7f, 0xd7f7ff, 0.88);
+    addPart(-width * 0.28, height * 0.24, width * 0.34, height * 0.34, 0xd6a04f, 0xfff0b8, 0.94);
+    addPart(-width * 0.28, height * 0.18, width * 0.16, height * 0.12, 0x8fd694, 0xcfffd5, 0.9);
+    addPart(0, height * 0.4, width * 0.72, Math.max(3, height * 0.1), 0x111820, 0x2f2721, 0.44);
+    addPart(width * 0.34, height * 0.2, width * 0.12, height * 0.16, 0xffefb0, 0xfff0b8, 0.78);
+    addPart(-width * 0.34, -height * 0.1, width * 0.12, height * 0.14, 0xfff0b8, 0xd6a04f, 0.82);
+    for (const xOffset of [-0.36, -0.2, -0.04, 0.14, 0.32]) {
+      addPart(width * xOffset, height * 0.02, width * 0.08, height * 0.1, 0x8b5f3c, 0xb28b63, 0.78);
+      addPart(width * xOffset, height * 0.3, width * 0.08, height * 0.1, 0xd6a04f, 0xfff0b8, 0.78);
+    }
+    addPart(width * 0.02, -height * 0.24, width * 0.1, height * 0.12, 0xb28b63, 0xfff0b8, 0.82);
+    addPart(width * 0.36, -height * 0.16, width * 0.08, height * 0.12, 0x566b7f, 0xd7f7ff, 0.82);
+    addPart(-width * 0.1, height * 0.28, width * 0.08, height * 0.12, 0xffefb0, 0xfff0b8, 0.78);
+    addPart(-width * 0.42, height * 0.28, width * 0.08, height * 0.12, 0x8fd694, 0xcfffd5, 0.82);
   } else if (kind === "floor_label") {
     addPart(0, 0, width, height, 0xffd166, 0xfff0b8, 0.52);
     addPart(-width * 0.24, 0, width * 0.12, height * 1.5, 0x263341, 0xfff0b8, 0.72);

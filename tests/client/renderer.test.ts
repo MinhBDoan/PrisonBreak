@@ -256,6 +256,95 @@ describe("GameRenderer", () => {
     return captured;
   }
 
+  it("renders cell and room set dressing as irregular pixel object silhouettes", () => {
+    const renderer = new GameRenderer();
+    const descriptors = renderer.describe(new GameSimulation().getSnapshot());
+    const targetKinds = new Set(["cot", "toilet", "bars", "desk", "monitor", "weapon_rack", "supply_shelf", "supply_boxes"]);
+    type RectCall = { x: number; y: number; width: number; height: number; fillColor: number };
+    const captured: Array<{ id: string; kind: string; childCount: number; rects: RectCall[]; colors: number[] }> = [];
+    let pendingRects: RectCall[] = [];
+    const makeShape = () => {
+      const shape = {
+        destroy: () => undefined,
+        setOrigin: () => shape,
+        setPosition: () => shape,
+        setSize: () => shape,
+        setFillStyle: () => shape,
+        setStrokeStyle: () => shape,
+        setDepth: () => shape,
+        setRotation: () => shape,
+        setAlpha: () => shape,
+        setVisible: () => shape,
+        setBlendMode: () => shape,
+      };
+      return shape;
+    };
+    const scene = {
+      add: {
+        rectangle: (x: number, y: number, width: number, height: number, fillColor: number) => {
+          pendingRects.push({ x, y, width, height, fillColor });
+          return makeShape();
+        },
+        ellipse: () => makeShape(),
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const rects = pendingRects.slice(-children.length);
+          pendingRects = [];
+          const container = {
+            list: children,
+            setPosition: (x: number, y: number) => {
+              const object = descriptors.setDressingObjects.find((candidate) => candidate.x === x && candidate.y === y);
+              if (object && targetKinds.has(object.kind)) {
+                captured.push({
+                  id: object.id,
+                  kind: object.kind,
+                  childCount: children.length,
+                  rects,
+                  colors: rects.map((rect) => rect.fillColor),
+                });
+              }
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          return container;
+        },
+        circle: () => makeShape(),
+        star: () => makeShape(),
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    const byKind = (kind: string) => captured.find((object) => object.kind === kind);
+    expect(byKind("cot")?.childCount).toBeGreaterThanOrEqual(8);
+    expect(byKind("cot")?.colors).toEqual(expect.arrayContaining([0xd7f7ff, 0xf28c38]));
+    expect(byKind("toilet")?.childCount).toBeGreaterThanOrEqual(7);
+    expect(byKind("toilet")?.colors).toEqual(expect.arrayContaining([0xf0f6fa, 0x6a7d8f]));
+    expect(byKind("bars")?.rects.filter((rect) => rect.height > rect.width).length).toBeGreaterThanOrEqual(4);
+    expect(byKind("desk")?.colors).toEqual(expect.arrayContaining([0x6bd3ff, 0xff5f56]));
+    expect(byKind("monitor")?.colors).toContain(0xd7f7ff);
+    expect(byKind("weapon_rack")?.rects.some((rect) => rect.width <= 6 && rect.height >= 10)).toBe(true);
+    expect(byKind("supply_shelf")?.childCount).toBeGreaterThanOrEqual(10);
+    expect(byKind("supply_boxes")?.colors).toEqual(expect.arrayContaining([0xfff0b8, 0x8fd694]));
+  });
+
   it("creates character containers for prisoner dressing instead of flat rectangles", () => {
     const renderer = new GameRenderer();
     const createdContainers: Array<{ depth: number | null; scale: number | null }> = [];
