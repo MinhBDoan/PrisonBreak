@@ -400,6 +400,92 @@ describe("GameRenderer", () => {
     expect(playerContainer?.colors).toContain(0xfff0b8);
   });
 
+  it("renders guards with cold security contrast chips distinct from the player", () => {
+    const renderer = new GameRenderer();
+    const snapshot = new GameSimulation().getSnapshot();
+    const guardPositions = renderer.describe(snapshot).guards.map((guard) => `${guard.x}:${guard.y}`);
+    const guardContainers: Array<{ childCount: number; colors: number[]; depth: number | null; x: number | null; y: number | null }> = [];
+    const makeShape = (fillColor?: number) => {
+      const shape = {
+        fillColor,
+        setOrigin: () => shape,
+        setPosition: () => shape,
+        setSize: () => shape,
+        setFillStyle: () => shape,
+        setStrokeStyle: () => shape,
+        setDepth: () => shape,
+        setRotation: () => shape,
+        setAlpha: () => shape,
+        setVisible: () => shape,
+        setBlendMode: () => shape,
+      };
+      return shape;
+    };
+    const rectangle = makeShape();
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => makeShape(fillColor),
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const colors = children
+            .map((child) => (child as { fillColor?: number }).fillColor)
+            .filter((fillColor): fillColor is number => fillColor !== undefined);
+          const containerRecord = {
+            childCount: children.length,
+            colors,
+            depth: null as number | null,
+            x: null as number | null,
+            y: null as number | null,
+          };
+          const container = {
+            list: children,
+            setPosition: (x: number, y: number) => {
+              containerRecord.x = x;
+              containerRecord.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: (depth: number) => {
+              containerRecord.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          guardContainers.push(containerRecord);
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, snapshot);
+
+    const renderedGuards = guardContainers.filter(
+      (container) => guardPositions.includes(`${container.x}:${container.y}`) && container.depth === 18,
+    );
+    expect(renderedGuards.length).toBeGreaterThanOrEqual(3);
+    expect(renderedGuards.every((guard) => guard.childCount >= 23)).toBe(true);
+    expect(renderedGuards.some((guard) => guard.colors.includes(0x8bd3ff))).toBe(true);
+    expect(renderedGuards.some((guard) => guard.colors.includes(0x6bd3ff))).toBe(true);
+    expect(renderedGuards.every((guard) => guard.colors.slice(-3).includes(0x8bd3ff))).toBe(true);
+  });
+
   it("renders set dressing props as pixel object containers", () => {
     const renderer = new GameRenderer();
     const createdContainers: Array<{ depth: number | null; childCount: number }> = [];

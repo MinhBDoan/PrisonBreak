@@ -470,6 +470,10 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
     const shirt = addPixelRect(scene, 0, 0, 16, 8, visual.accentColor, 1);
     const belt = addPixelRect(scene, 0, 11, 23, 4, visual.accentColor);
     const badge = addPixelRect(scene, 7, 1, 4, 5, 0xffd166);
+    const radioGlow = addPixelRect(scene, -8, 1, 4, 5, 0x8bd3ff, 0.9);
+    const cuffLeft = addPixelRect(scene, -15, 17, 5, 4, 0x6bd3ff, 0.82);
+    const cuffRight = addPixelRect(scene, 15, 17, 5, 4, 0x6bd3ff, 0.82);
+    const visorChip = addPixelRect(scene, 0, -23, 13, 3, 0x8bd3ff, 0.68);
     const head = addPixelRect(scene, 0, -16, 21, 18, skinColor);
     head.setStrokeStyle(2, visual.outlineColor, 0.96);
     const earLeft = addPixelRect(scene, -9, -25, 6, 13, skinColor).setRotation(-0.18);
@@ -493,12 +497,16 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
       shirt,
       belt,
       badge,
+      radioGlow,
+      cuffLeft,
+      cuffRight,
       head,
       earLeft,
       earRight,
       muzzle,
       nose,
       cap,
+      visorChip,
       eyeLeft,
       eyeRight,
     ]);
@@ -517,6 +525,10 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
   const shirt = addPixelRect(scene, 4, 0, 14, 8, visual.accentColor, 1);
   const belt = addPixelRect(scene, 1, 11, 22, 4, visual.accentColor);
   const badge = addPixelRect(scene, 9, 1, 4, 5, 0xffd166);
+  const radioGlow = addPixelRect(scene, 1, 1, 4, 5, 0x8bd3ff, 0.9);
+  const cuffBack = addPixelRect(scene, -10, 17, 5, 4, 0x6bd3ff, 0.78);
+  const cuffFront = addPixelRect(scene, 13, 18, 5, 4, 0x6bd3ff, 0.82);
+  const visorChip = addPixelRect(scene, 8, -24, 12, 3, 0x8bd3ff, 0.68);
   const neck = addPixelRect(scene, -2, -5, 8, 8, skinColor);
   const head = addPixelRect(scene, 3, -17, 19, 17, skinColor);
   head.setStrokeStyle(2, visual.outlineColor, 0.96);
@@ -540,6 +552,9 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
     shirt,
     belt,
     badge,
+    radioGlow,
+    cuffBack,
+    cuffFront,
     neck,
     head,
     earBack,
@@ -547,6 +562,7 @@ function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescripto
     muzzle,
     nose,
     cap,
+    visorChip,
     eye,
   ]);
 }
