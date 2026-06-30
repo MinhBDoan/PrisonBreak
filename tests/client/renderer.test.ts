@@ -333,10 +333,20 @@ describe("GameRenderer", () => {
     renderer.render(scene as never, new GameSimulation().getSnapshot());
 
     const byKind = (kind: string) => captured.find((object) => object.kind === kind);
-    expect(byKind("cot")?.childCount).toBeGreaterThanOrEqual(8);
-    expect(byKind("cot")?.colors).toEqual(expect.arrayContaining([0xd7f7ff, 0xf28c38]));
-    expect(byKind("toilet")?.childCount).toBeGreaterThanOrEqual(7);
-    expect(byKind("toilet")?.colors).toEqual(expect.arrayContaining([0xf0f6fa, 0x6a7d8f]));
+    const cot = byKind("cot");
+    expect(cot?.childCount).toBeGreaterThanOrEqual(8);
+    expect(cot?.colors).toEqual(expect.arrayContaining([0xd7f7ff, 0x475766, 0x172231]));
+    expect(cot?.colors).not.toContain(0xf28c38);
+    expect(cot?.rects.some((rect) => rect.fillColor === 0xd7f7ff && rect.width > rect.height)).toBe(true);
+    expect(cot?.rects.some((rect) => rect.fillColor === 0x475766 && rect.width > rect.height)).toBe(true);
+
+    const toilet = byKind("toilet");
+    expect(toilet?.childCount).toBeGreaterThanOrEqual(6);
+    expect(toilet?.colors).toEqual(expect.arrayContaining([0xf0f6fa, 0xc8d3dc, 0x6a7d8f]));
+    expect(toilet?.colors).not.toContain(0xfff0b8);
+    expect(toilet?.colors).not.toContain(0xf28c38);
+    expect(toilet?.rects.some((rect) => rect.fillColor === 0xc8d3dc && rect.y < 0)).toBe(true);
+    expect(toilet?.rects.some((rect) => rect.fillColor === 0x6a7d8f && rect.width > rect.height)).toBe(true);
     expect(byKind("bars")?.rects.filter((rect) => rect.height > rect.width).length).toBeGreaterThanOrEqual(4);
     expect(byKind("desk")?.colors).toEqual(expect.arrayContaining([0x6bd3ff, 0xff5f56]));
     expect(byKind("monitor")?.colors).toContain(0xd7f7ff);
@@ -1335,12 +1345,10 @@ describe("GameRenderer", () => {
     expect(props.find((prop) => prop.id === "starter_cell_bars")?.childCount).toBeGreaterThanOrEqual(7);
     expect(props.find((prop) => prop.id === "starter_cell_bars")?.childCount).toBe(17);
     expect(props.find((prop) => prop.id === "starter_cell_bars")?.fillColors).toEqual(expect.arrayContaining([0x0b1118, 0xb8c6d1]));
-    expect(props.find((prop) => prop.id === "starter_cell_cot")?.childCount).toBeGreaterThanOrEqual(6);
-    expect(props.find((prop) => prop.id === "starter_cell_cot")?.childCount).toBe(27);
-    expect(props.find((prop) => prop.id === "starter_cell_toilet")?.childCount).toBeGreaterThanOrEqual(5);
-    expect(props.find((prop) => prop.id === "starter_cell_toilet")?.childCount).toBe(27);
-    expect(props.find((prop) => prop.id === "starter_cell_cot")?.fillColors).toEqual(expect.arrayContaining([0xd6dde4, 0x2d3b49, 0x7f93a8]));
-    expect(props.find((prop) => prop.id === "starter_cell_toilet")?.fillColors).toEqual(expect.arrayContaining([0xe9f1f6, 0x91a8b6]));
+    expect(props.find((prop) => prop.id === "starter_cell_cot")?.childCount).toBeGreaterThanOrEqual(8);
+    expect(props.find((prop) => prop.id === "starter_cell_toilet")?.childCount).toBeGreaterThanOrEqual(6);
+    expect(props.find((prop) => prop.id === "starter_cell_cot")?.fillColors).toEqual(expect.arrayContaining([0xd7f7ff, 0x475766, 0x172231]));
+    expect(props.find((prop) => prop.id === "starter_cell_toilet")?.fillColors).toEqual(expect.arrayContaining([0xf0f6fa, 0xc8d3dc, 0x6a7d8f]));
   });
 
   it("renders security props as control-room silhouettes", () => {

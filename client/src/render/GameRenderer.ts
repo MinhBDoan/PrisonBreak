@@ -806,57 +806,24 @@ function createSetDressingSprite(
       addPart(width * offset, height * 0.22, Math.max(3, width * 0.05), height * 0.18, 0xb8c6d1, 0xeef6ff, 0.94);
     }
   } else if (kind === "cot") {
-    addPart(0, 0, width * 0.92, height * 0.7, 0x475766, 0x7f93a8, 0.96);
-    addPart(-width * 0.26, -height * 0.08, width * 0.28, height * 0.42, 0xd7f7ff, 0xf8fbff, 0.92);
-    addPart(width * 0.17, height * 0.02, width * 0.42, height * 0.44, 0xf28c38, 0xffd166, 0.95);
-    notch(-width * 0.42, -height * 0.4, width * 0.12, height * 0.2, 0x172231, 0.9);
-    notch(width * 0.42, -height * 0.4, width * 0.12, height * 0.2, 0x172231, 0.9);
-    notch(-width * 0.42, height * 0.42, width * 0.12, height * 0.18, 0x172231, 0.9);
-    notch(width * 0.42, height * 0.42, width * 0.12, height * 0.18, 0x172231, 0.9);
-    addPart(0, height * 0.46, width * 0.74, Math.max(3, height * 0.12), 0x101820, 0x293341, 0.5);
-    addPart(0, -height * 0.34, width * 0.82, Math.max(3, height * 0.08), 0x7f93a8, 0xd6dde4, 0.88);
-    addPart(0, height * 0.28, width * 0.78, Math.max(3, height * 0.08), 0x7f93a8, 0xd6dde4, 0.88);
-    addPart(-width * 0.34, -height * 0.04, width * 0.1, height * 0.3, 0xd6dde4, 0xf8fbff, 0.86);
-    addPart(width * 0.02, -height * 0.02, width * 0.1, height * 0.36, 0x2d3b49, 0x7f93a8, 0.88);
-    addPart(width * 0.32, -height * 0.02, width * 0.1, height * 0.34, 0x2d3b49, 0x7f93a8, 0.88);
-    for (const xOffset of [-0.34, -0.18, 0.02, 0.18, 0.34]) {
-      addPart(width * xOffset, height * 0.2, width * 0.07, height * 0.08, 0xf28c38, 0xffd166, 0.88);
+    addPart(0, 0, width * 0.92, height * 0.58, 0x475766, 0x7f93a8, 0.96);
+    addPart(-width * 0.25, -height * 0.06, width * 0.3, height * 0.34, 0xd7f7ff, 0xf8fbff, 0.94);
+    addPart(width * 0.16, height * 0.02, width * 0.46, height * 0.34, 0x2d3b49, 0x7f93a8, 0.94);
+    addPart(0, -height * 0.36, width * 0.84, Math.max(3, height * 0.08), 0x172231, 0x7f93a8, 0.9);
+    addPart(0, height * 0.36, width * 0.84, Math.max(3, height * 0.08), 0x172231, 0x7f93a8, 0.9);
+    for (const xOffset of [-0.42, 0.42]) {
+      addPart(width * xOffset, 0, width * 0.08, height * 0.62, 0x172231, 0x7f93a8, 0.9);
+      addPart(width * xOffset, height * 0.42, width * 0.1, height * 0.18, 0x101820, 0x293341, 0.68);
     }
-    for (const xOffset of [-0.34, -0.12, 0.12, 0.34]) {
-      addPart(width * xOffset, -height * 0.24, width * 0.07, height * 0.08, 0xd7f7ff, 0xf8fbff, 0.82);
-    }
-    for (const xOffset of [-0.44, 0.44]) {
-      addPart(width * xOffset, 0, width * 0.07, height * 0.52, 0x111820, 0x7f93a8, 0.85);
-    }
-    addPart(width * 0.43, height * 0.2, width * 0.08, height * 0.08, 0xffd166, 0xfff0b8, 0.8);
-    addPart(-width * 0.43, height * 0.2, width * 0.08, height * 0.08, 0xffd166, 0xfff0b8, 0.8);
-    addPart(0, 0, width * 0.06, height * 0.56, 0x7f93a8, 0xd6dde4, 0.7);
+    addPart(0, height * 0.48, width * 0.76, Math.max(3, height * 0.1), 0x101820, 0x293341, 0.42);
   } else if (kind === "toilet") {
-    addPart(0, -height * 0.28, width * 0.58, height * 0.34, 0xc8d3dc, 0xf0f6fa, 0.96);
-    addPart(0, height * 0.08, width * 0.76, height * 0.5, 0xf0f6fa, 0x6a7d8f, 0.96);
-    addPart(0, height * 0.08, width * 0.38, height * 0.24, 0x6a7d8f, 0xd7f7ff, 0.76);
-    addPart(-width * 0.26, height * 0.36, width * 0.18, height * 0.2, 0x44515f, 0x9aa7b4, 0.85);
-    addPart(width * 0.28, -height * 0.44, width * 0.16, height * 0.22, 0xd7f7ff, 0xf0f6fa, 0.82);
-    addPart(-width * 0.34, -height * 0.12, width * 0.18, height * 0.24, 0xf0f6fa, 0xd7f7ff, 0.88);
-    addPart(0, height * 0.5, width * 0.6, Math.max(3, height * 0.1), 0x101820, 0x293341, 0.45);
-    addPart(0, -height * 0.28, width * 0.34, height * 0.12, 0xe9f1f6, 0xf8fbff, 0.88);
-    addPart(0, height * 0.02, width * 0.5, height * 0.12, 0xe9f1f6, 0xf8fbff, 0.9);
-    addPart(0, height * 0.18, width * 0.3, height * 0.12, 0x91a8b6, 0xd7f7ff, 0.82);
-    for (const xOffset of [-0.24, 0.24]) {
-      addPart(width * xOffset, height * 0.1, width * 0.12, height * 0.32, 0xe9f1f6, 0xf8fbff, 0.84);
-      addPart(width * xOffset, -height * 0.34, width * 0.1, height * 0.16, 0x91a8b6, 0xd7f7ff, 0.78);
-    }
-    for (const xOffset of [-0.26, 0, 0.26]) {
-      addPart(width * xOffset, height * 0.36, width * 0.08, height * 0.12, 0x111820, 0x6a7d8f, 0.72);
-    }
-    for (const yOffset of [-0.42, -0.2, 0.28]) {
-      addPart(width * 0.38, height * yOffset, width * 0.08, height * 0.12, 0xe9f1f6, 0xf8fbff, 0.74);
-      addPart(-width * 0.38, height * yOffset, width * 0.08, height * 0.12, 0x91a8b6, 0xd7f7ff, 0.72);
-    }
-    addPart(0, -height * 0.48, width * 0.18, height * 0.08, 0x6a7d8f, 0xd7f7ff, 0.72);
-    addPart(0, height * 0.42, width * 0.18, height * 0.08, 0xf0f6fa, 0xd7f7ff, 0.76);
-    addPart(width * 0.18, height * 0.44, width * 0.1, height * 0.08, 0x91a8b6, 0xd7f7ff, 0.72);
-    addPart(-width * 0.18, height * 0.44, width * 0.1, height * 0.08, 0xe9f1f6, 0xf8fbff, 0.72);
+    addPart(0, -height * 0.3, width * 0.58, height * 0.32, 0xc8d3dc, 0xf0f6fa, 0.96);
+    addPart(0, height * 0.08, width * 0.76, height * 0.44, 0xf0f6fa, 0xc8d3dc, 0.96);
+    addPart(0, height * 0.08, width * 0.42, height * 0.18, 0x6a7d8f, 0xd7f7ff, 0.72);
+    addPart(0, height * 0.34, width * 0.44, height * 0.24, 0xc8d3dc, 0xf0f6fa, 0.9);
+    addPart(width * 0.32, -height * 0.42, width * 0.14, height * 0.24, 0x9aa7b4, 0xd7f7ff, 0.82);
+    addPart(-width * 0.28, height * 0.38, width * 0.16, height * 0.18, 0x44515f, 0x9aa7b4, 0.78);
+    addPart(0, height * 0.52, width * 0.6, Math.max(3, height * 0.1), 0x101820, 0x293341, 0.42);
   } else if (kind === "desk") {
     addPart(0, 0, width, height, 0x4d3f34, 0x9b7459, 0.96);
     addPart(0, -height * 0.24, width * 0.86, Math.max(5, height * 0.18), 0x173142, 0x6bd3ff, 0.88);
