@@ -67,7 +67,7 @@ export type GuardDescriptor = EntityDescriptor & {
 };
 
 export type RenderDescriptors = {
-  player: EntityDescriptor & { hidden: boolean; visual: CharacterVisualDescriptor };
+  player: EntityDescriptor & { hidden: boolean; facing: Vector; visual: CharacterVisualDescriptor };
   guards: GuardDescriptor[];
   hidingSpots: Array<EntityDescriptor & { type: HidingSpot["type"]; bodyOccupied: boolean }>;
   coverObjects: Array<EntityDescriptor & { width: number; height: number }>;
@@ -435,6 +435,71 @@ function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescript
   return scene.add.container(0, 0, parts);
 }
 
+function playerImageKey(facing: Vector, walking = false): string {
+  const suffix = walking ? "-walk" : "";
+  if (Math.abs(facing.x) > Math.abs(facing.y)) {
+    if (walking) {
+      return facing.x < 0 ? "player-raccoon-left-walk" : "player-raccoon-right-walk";
+    }
+    return facing.x < 0 ? "player-raccoon-right" : "player-raccoon-left";
+  }
+  return facing.y < 0 ? `player-raccoon-up${suffix}` : `player-raccoon-down${suffix}`;
+}
+
+function createPlayerImageSprite(
+  scene: Phaser.Scene,
+  visual: CharacterVisualDescriptor,
+  facing: Vector,
+  walking = false,
+): Phaser.GameObjects.Container {
+  if (visual.species !== "raccoon" || typeof scene.add.image !== "function") {
+    return createPlayerSprite(scene, visual);
+  }
+  const shadow = scene.add.ellipse(0, 18, 31, 10, 0x081018, 0.24);
+  const sprite = scene.add.image(0, -4, playerImageKey(facing, walking));
+  sprite.setDisplaySize(52, 63);
+  const footBack = addPixelRect(scene, -7, 27, 9, 5, 0x172231, 0.98);
+  const footFront = addPixelRect(scene, 7, 27, 9, 5, 0x172231, 0.98);
+  const parts: Phaser.GameObjects.GameObject[] = [shadow, sprite, footBack, footFront];
+  if (visual.playerHighlight) {
+    parts.push(addPixelRect(scene, 0, -39, 14, 3, visual.accentColor, 0.98));
+  }
+  return scene.add.container(0, 0, parts);
+}
+
+function animatePlayerFeet(
+  container: Phaser.GameObjects.Container,
+  facing: Vector,
+  walking: boolean,
+  step: number,
+): void {
+  const footBack = container.list[2] as Phaser.GameObjects.Rectangle | undefined;
+  const footFront = container.list[3] as Phaser.GameObjects.Rectangle | undefined;
+  if (!footBack || !footFront || typeof footBack.setPosition !== "function" || typeof footFront.setPosition !== "function") {
+    return;
+  }
+
+  if (!walking) {
+    footBack.setPosition(-7, 27);
+    footFront.setPosition(7, 27);
+    footBack.setAlpha(0.98);
+    footFront.setAlpha(0.98);
+    return;
+  }
+
+  const stride = Math.sign(step || 1);
+  if (Math.abs(facing.x) > Math.abs(facing.y)) {
+    const direction = Math.sign(facing.x) || 1;
+    footBack.setPosition(-5 - direction * stride * 4, 27 + stride * 1.5);
+    footFront.setPosition(6 + direction * stride * 4, 27 - stride * 1.5);
+  } else {
+    footBack.setPosition(-8, 27 + stride * 3);
+    footFront.setPosition(8, 27 - stride * 3);
+  }
+  footBack.setAlpha(stride > 0 ? 0.72 : 1);
+  footFront.setAlpha(stride > 0 ? 1 : 0.72);
+}
+
 function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
   const skinColor = visual.species === "dog" ? 0xa87955 : 0xd8894d;
   const tailColor = visual.species === "dog" ? 0x7a563d : 0xc36a38;
@@ -549,7 +614,7 @@ function createSetDressingSprite(
   width: number,
   height: number,
 ): Phaser.GameObjects.Container {
-  const parts: Phaser.GameObjects.Rectangle[] = [];
+  const parts: Phaser.GameObjects.GameObject[] = [];
   const addPart = (
     x: number,
     y: number,
@@ -564,8 +629,30 @@ function createSetDressingSprite(
     parts.push(part);
     return part;
   };
+  const addOval = (
+    x: number,
+    y: number,
+    partWidth: number,
+    partHeight: number,
+    color: number,
+    stroke = setDressingStroke(kind),
+    alpha = setDressingAlpha(kind),
+  ): Phaser.GameObjects.Ellipse => {
+    const part = scene.add.ellipse(x, y, partWidth, partHeight, color, alpha);
+    part.setStrokeStyle(2, stroke, 0.72);
+    parts.push(part);
+    return part;
+  };
 
-  if (kind === "bars") {
+  if (kind === "cot" && typeof scene.add.image === "function") {
+    const sprite = scene.add.image(0, 0, "cot-side");
+    sprite.setDisplaySize(width * 1.18, height * 1.42);
+    parts.push(sprite);
+  } else if (kind === "toilet" && typeof scene.add.image === "function") {
+    const sprite = scene.add.image(0, 0, "toilet-side");
+    sprite.setDisplaySize(width * 2.05, height * 1.82);
+    parts.push(sprite);
+  } else if (kind === "bars") {
     const barCount = Math.max(3, Math.floor(width / 12));
     addPart(0, 0, width, Math.max(4, height), 0x394958, 0x9aa7b4, 0.72);
     for (let index = 0; index < barCount; index += 1) {
@@ -573,13 +660,26 @@ function createSetDressingSprite(
       addPart(x, 0, 4, Math.max(20, height + 18), 0xb8c6d1, 0xe2e8ef, 0.95);
     }
   } else if (kind === "cot") {
-    addPart(0, 0, width, height, 0x3e5364, 0x7f93a8, 0.96);
-    addPart(-width * 0.28, -height * 0.15, width * 0.28, height * 0.42, 0xd6dde4, 0xf0f6fa, 0.98);
-    addPart(width * 0.12, height * 0.2, width * 0.62, Math.max(5, height * 0.18), 0x2d3b49, 0x6a7d8f, 0.96);
+    addPart(0, height * 0.12, width * 0.9, height * 0.6, 0x2a3744, 0x7f93a8, 0.94);
+    addPart(-width * 0.47, -height * 0.02, Math.max(5, width * 0.07), height, 0x151d24, 0x394958, 0.88);
+    addPart(-width * 0.38, height * 0.14, Math.max(4, width * 0.04), height * 0.42, 0xc8d3dc, 0xf2f6fa, 0.92);
+    addPart(width * 0.42, height * 0.18, Math.max(5, width * 0.07), height * 0.72, 0x151d24, 0x394958, 0.88);
+    addPart(0, height * 0.42, width * 0.8, Math.max(4, height * 0.1), 0x151d24, 0x394958, 0.82);
+    addPart(-width * 0.1, height * 0.02, width * 0.58, height * 0.5, 0xe6ece8, 0xffffff, 0.9);
+    addPart(width * 0.15, height * 0.02, width * 0.54, height * 0.46, 0x5f786f, 0xb4c8bc, 0.98);
+    addPart(width * 0.08, height * 0.02, Math.max(1, width * 0.01), height * 0.32, 0x789083, 0xb4c8bc, 0.42);
+    addPart(width * 0.24, height * 0.02, Math.max(1, width * 0.01), height * 0.32, 0x789083, 0xb4c8bc, 0.42);
+    addPart(-width * 0.26, -height * 0.02, width * 0.24, height * 0.34, 0xf2f6fa, 0xffffff, 0.98);
+    addPart(-width * 0.26, height * 0.1, width * 0.2, Math.max(4, height * 0.08), 0xc8d3dc, 0xe9f1f6, 0.82);
   } else if (kind === "toilet") {
-    addPart(0, 2, width * 0.76, height * 0.7, 0xc8d3dc, 0xf0f6fa, 0.98);
-    addPart(0, -height * 0.28, width * 0.58, height * 0.32, 0xe9f1f6, 0xffffff, 0.98);
-    addPart(0, 3, width * 0.32, height * 0.2, 0x91a8b6, 0xf0f6fa, 0.86);
+    addPart(0, height * 0.4, width * 0.78, height * 0.12, 0x91a8b6, 0xf0f6fa, 0.76);
+    addPart(-width * 0.28, height * 0.08, width * 0.36, height * 0.62, 0xc8d3dc, 0xf0f6fa, 0.98);
+    addPart(-width * 0.28, -height * 0.26, width * 0.46, Math.max(5, height * 0.15), 0xe9f1f6, 0xffffff, 0.98);
+    addOval(-width * 0.4, -height * 0.18, width * 0.16, height * 0.1, 0x91a8b6, 0xf0f6fa, 0.92).setRotation(-0.18);
+    addPart(-width * 0.02, height * 0.18, width * 0.26, height * 0.36, 0xe9f1f6, 0xffffff, 0.95);
+    addOval(width * 0.24, height * 0.08, width * 0.68, height * 0.36, 0xf8fbff, 0xffffff, 0.98);
+    addPart(width * 0.24, height * 0.24, width * 0.48, height * 0.2, 0xe9f1f6, 0xffffff, 0.92);
+    addOval(width * 0.28, height * 0.04, width * 0.42, height * 0.14, 0x273642, 0x91a8b6, 0.9);
   } else if (kind === "desk") {
     addPart(0, 0, width, height, 0x4d3f34, 0x9b7459, 0.96);
     addPart(-width * 0.26, height * 0.18, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
@@ -689,6 +789,9 @@ function addRoomDetails(scene: Phaser.Scene): Array<Phaser.GameObjects.Rectangle
 export class GameRenderer {
   private objects: RenderObjects | null = null;
   private lastNoiseRippleAtMs = Number.NEGATIVE_INFINITY;
+  private playerImageKey: string | null = null;
+  private lastPlayerRenderPosition: Vector | null = null;
+  private lastPlayerMovedAtMs = Number.NEGATIVE_INFINITY;
 
   describe(snapshot: SimulationSnapshot): RenderDescriptors {
     return {
@@ -698,6 +801,7 @@ export class GameRenderer {
         x: world(snapshot.player.position.x),
         y: world(snapshot.player.position.y),
         hidden: snapshot.player.hiddenIn !== null,
+        facing: { ...snapshot.player.facing },
         visual: playerVisual(),
       },
       guards: snapshot.guards.map((guard) => ({
@@ -909,12 +1013,53 @@ export class GameRenderer {
     const objects = this.objects as RenderObjects;
     const descriptors = this.describe(snapshot);
 
+    const playerMoved =
+      this.lastPlayerRenderPosition !== null &&
+      Math.hypot(
+        descriptors.player.x - this.lastPlayerRenderPosition.x,
+        descriptors.player.y - this.lastPlayerRenderPosition.y,
+      ) > 0.05;
+    const renderTimeMs = scene.time?.now ?? snapshot.timeMs;
+    if (playerMoved) {
+      this.lastPlayerMovedAtMs = renderTimeMs;
+    }
+    const playerWalking = !descriptors.player.hidden && renderTimeMs - this.lastPlayerMovedAtMs < 180;
+    const playerWalkPhase = renderTimeMs / 95;
+    const playerStep = playerWalking ? Math.sin(playerWalkPhase) : 0;
+    const playerWalkFrame =
+      playerWalking && Math.floor(renderTimeMs / 170) % 2 === 1;
+    const nextPlayerImageKey = playerImageKey(descriptors.player.facing, playerWalkFrame);
+    if (objects.player && this.playerImageKey !== null && this.playerImageKey !== nextPlayerImageKey) {
+      objects.player.destroy();
+      objects.player = undefined;
+    }
     if (!objects.player) {
-      objects.player = createPlayerSprite(scene, descriptors.player.visual);
+      objects.player = createPlayerImageSprite(
+        scene,
+        descriptors.player.visual,
+        descriptors.player.facing,
+        playerWalkFrame,
+      );
+      this.playerImageKey = typeof scene.add.image === "function" ? nextPlayerImageKey : null;
       objects.player.setDepth(18);
     }
-    objects.player.setPosition(descriptors.player.x, descriptors.player.y);
+    const playerBounce = Math.abs(playerStep) * 2.2;
+    const playerSway =
+      playerWalking && Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y)
+        ? Math.sign(descriptors.player.facing.x) * playerStep * 1.4
+        : 0;
+    animatePlayerFeet(objects.player, descriptors.player.facing, playerWalking, playerStep);
+    objects.player.setPosition(descriptors.player.x + playerSway, descriptors.player.y - playerBounce);
+    objects.player.setRotation(playerWalking ? playerStep * 0.035 : 0);
+    if (typeof objects.player.setScale === "function") {
+      const sideStep = Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y);
+      objects.player.setScale(
+        1 + Math.abs(playerStep) * (sideStep ? 0.055 : 0.035),
+        1 - Math.abs(playerStep) * 0.03,
+      );
+    }
     objects.player.setAlpha(descriptors.player.hidden ? 0.42 : 1);
+    this.lastPlayerRenderPosition = { x: descriptors.player.x, y: descriptors.player.y };
 
     for (const spot of descriptors.hidingSpots) {
       const color = spot.bodyOccupied ? 0x5b3240 : spot.type === "locker" ? 0x566b7f : 0x151a22;
@@ -957,8 +1102,12 @@ export class GameRenderer {
       }
 
       const existing = objects.setDressingObjects.get(object.id);
+      if ((object.kind === "cot" || object.kind === "toilet") && existing && typeof scene.add.image === "function") {
+        existing.destroy();
+        objects.setDressingObjects.delete(object.id);
+      }
       const prop =
-        existing && "list" in existing
+        object.kind !== "cot" && object.kind !== "toilet" && existing && "list" in existing
           ? existing
           : createSetDressingSprite(scene, object.kind, object.width, object.height);
       prop.setPosition(object.x, object.y);

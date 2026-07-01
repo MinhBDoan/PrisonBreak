@@ -240,6 +240,124 @@ describe("GameRenderer", () => {
     expect(createdContainers.filter((container) => container.depth === 5 && container.scale === 1)).toHaveLength(2);
   });
 
+  it("renders the player with warm pixel contrast chips separate from guards", () => {
+    const renderer = new GameRenderer();
+    const descriptors = renderer.describe(new GameSimulation().getSnapshot());
+    const playerDescriptor = descriptors.player;
+    let pendingColors: number[] = [];
+    const playerContainers: Array<{
+      childCount: number;
+      colors: number[];
+      depth: number | null;
+      scale: number | null;
+      x: number | null;
+      y: number | null;
+    }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const colors = pendingColors.slice(-children.length);
+          pendingColors = [];
+          const container = {
+            list: children,
+            depth: null as number | null,
+            scale: null as number | null,
+            x: null as number | null,
+            y: null as number | null,
+            setPosition: (x: number, y: number) => {
+              container.x = x;
+              container.y = y;
+              return container;
+            },
+            setScale: (scale: number) => {
+              container.scale = scale;
+              return container;
+            },
+            setDepth: (depth: number) => {
+              container.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          playerContainers.push({
+            childCount: children.length,
+            colors,
+            depth: container.depth,
+            scale: container.scale,
+            x: container.x,
+            y: container.y,
+          });
+          const index = playerContainers.length - 1;
+          container.setPosition = (x: number, y: number) => {
+            container.x = x;
+            container.y = y;
+            playerContainers[index].x = x;
+            playerContainers[index].y = y;
+            return container;
+          };
+          container.setScale = (scale: number) => {
+            container.scale = scale;
+            playerContainers[index].scale = scale;
+            return container;
+          };
+          container.setDepth = (depth: number) => {
+            container.depth = depth;
+            playerContainers[index].depth = depth;
+            return container;
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    const playerContainer = playerContainers.find(
+      (container) =>
+        container.x === playerDescriptor.x &&
+        container.y === playerDescriptor.y &&
+        container.depth === 18,
+    );
+
+    expect(playerContainer?.childCount).toBeGreaterThanOrEqual(17);
+    const playerColors = playerContainer?.colors ?? [];
+    expect(playerColors).toEqual(expect.arrayContaining([0xff5f56, 0xffd166, 0xf8fbff]));
+  });
+
   it("renders set dressing props as pixel object containers", () => {
     const renderer = new GameRenderer();
     const createdContainers: Array<{ depth: number | null; childCount: number }> = [];
@@ -305,6 +423,184 @@ describe("GameRenderer", () => {
     const propContainers = createdContainers.filter((container) => container.depth === 3);
     expect(propContainers.length).toBeGreaterThanOrEqual(10);
     expect(propContainers.every((container) => container.childCount >= 2)).toBe(true);
+  });
+
+  it("renders cots with readable pillow and uneven in-use bedding pieces", () => {
+    const renderer = new GameRenderer();
+    const descriptors = renderer.describe(new GameSimulation().getSnapshot());
+    const cotDescriptors = descriptors.setDressingObjects.filter((object) => object.kind === "cot");
+    let pendingColors: number[] = [];
+    const cotContainers: Array<{ childCount: number; colors: number[]; x: number | null; y: number | null }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        ellipse: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const colors = pendingColors.slice(-children.length);
+          pendingColors = [];
+          const container = {
+            list: children,
+            x: null as number | null,
+            y: null as number | null,
+            setPosition: (x: number, y: number) => {
+              container.x = x;
+              container.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          cotContainers.push({ childCount: children.length, colors, x: container.x, y: container.y });
+          const index = cotContainers.length - 1;
+          container.setPosition = (x: number, y: number) => {
+            container.x = x;
+            container.y = y;
+            cotContainers[index].x = x;
+            cotContainers[index].y = y;
+            return container;
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    const renderedCots = cotContainers.filter((container) =>
+      cotDescriptors.some((cot) => cot.x === container.x && cot.y === container.y),
+    );
+
+    expect(renderedCots).toHaveLength(cotDescriptors.length);
+    expect(renderedCots.every((cot) => cot.childCount >= 10 && cot.childCount <= 12)).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0xf2f6fa))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0xc8d3dc))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0x5f786f))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0xe6ece8))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0x789083))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0x151d24))).toBe(true);
+  });
+
+  it("renders toilets as right-facing fixtures with a larger bowl and wider lid", () => {
+    const renderer = new GameRenderer();
+    const descriptors = renderer.describe(new GameSimulation().getSnapshot());
+    const toiletDescriptors = descriptors.setDressingObjects.filter((object) => object.kind === "toilet");
+    let pendingColors: number[] = [];
+    const toiletContainers: Array<{ childCount: number; colors: number[]; x: number | null; y: number | null }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        ellipse: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const colors = pendingColors.slice(-children.length);
+          pendingColors = [];
+          const container = {
+            list: children,
+            x: null as number | null,
+            y: null as number | null,
+            setPosition: (x: number, y: number) => {
+              container.x = x;
+              container.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          toiletContainers.push({ childCount: children.length, colors, x: container.x, y: container.y });
+          const index = toiletContainers.length - 1;
+          container.setPosition = (x: number, y: number) => {
+            container.x = x;
+            container.y = y;
+            toiletContainers[index].x = x;
+            toiletContainers[index].y = y;
+            return container;
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    const renderedToilets = toiletContainers.filter((container) =>
+      toiletDescriptors.some((toilet) => toilet.x === container.x && toilet.y === container.y),
+    );
+
+    expect(renderedToilets).toHaveLength(toiletDescriptors.length);
+    expect(renderedToilets.every((toilet) => toilet.childCount >= 6)).toBe(true);
+    expect(renderedToilets.every((toilet) => toilet.colors.includes(0x273642))).toBe(true);
+    expect(renderedToilets.every((toilet) => toilet.colors.includes(0x91a8b6))).toBe(true);
   });
 
   it("renders storage and security identity props as multi-part pixel containers", () => {

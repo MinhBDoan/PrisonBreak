@@ -279,6 +279,7 @@ export class GameSimulation {
   private readonly inspectionTimers = new Map<string, number>();
   private readonly player: PlayerState = {
     position: { x: 1.5, y: 1.5 },
+    facing: { x: 0, y: 1 },
     hasKey: false,
     hiddenIn: null,
     draggingBodyId: null,
@@ -522,6 +523,7 @@ export class GameSimulation {
       },
       player: {
         position: { ...this.player.position },
+        facing: { ...this.player.facing },
         hasKey: this.player.hasKey,
         hiddenIn: this.player.hiddenIn,
         draggingBodyId: this.player.draggingBodyId,
@@ -850,6 +852,8 @@ export class GameSimulation {
     if (direction.x === 0 && direction.y === 0) {
       return;
     }
+
+    this.player.facing = { ...direction };
 
     if (this.player.hiddenIn) {
       return;

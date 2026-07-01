@@ -150,6 +150,7 @@ export type PrisonLevel = {
 
 export type PlayerState = {
   position: Vector;
+  facing: Vector;
   hasKey: boolean;
   hiddenIn: string | null;
   draggingBodyId: string | null;
