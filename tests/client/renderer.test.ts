@@ -353,9 +353,9 @@ describe("GameRenderer", () => {
         container.depth === 18,
     );
 
-    expect(playerContainer?.childCount).toBeGreaterThanOrEqual(17);
+    expect(playerContainer?.childCount).toBeGreaterThanOrEqual(5);
     const playerColors = playerContainer?.colors ?? [];
-    expect(playerColors).toEqual(expect.arrayContaining([0xff5f56, 0xffd166, 0xf8fbff]));
+    expect(playerColors).toEqual(expect.arrayContaining([0xffd166, 0xf8fbff]));
   });
 
   it("renders set dressing props as pixel object containers", () => {

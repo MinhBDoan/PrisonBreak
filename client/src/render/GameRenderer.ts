@@ -119,7 +119,7 @@ type RenderObjects = {
   setDressingObjects: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Container>;
   pebbles: Map<string, Phaser.GameObjects.Arc>;
   weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
-  healingPickups: Map<string, Phaser.GameObjects.Rectangle>;
+  healingPickups: Map<string, Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle>;
   doors: Map<string, Phaser.GameObjects.Rectangle>;
   doorKeyPickups: Map<string, Phaser.GameObjects.Star>;
   aimLine?: Phaser.GameObjects.Graphics;
@@ -438,9 +438,6 @@ function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescript
 function playerImageKey(facing: Vector, walking = false): string {
   const suffix = walking ? "-walk" : "";
   if (Math.abs(facing.x) > Math.abs(facing.y)) {
-    if (walking) {
-      return facing.x < 0 ? "player-raccoon-left-walk" : "player-raccoon-right-walk";
-    }
     return facing.x < 0 ? "player-raccoon-right" : "player-raccoon-left";
   }
   return facing.y < 0 ? `player-raccoon-up${suffix}` : `player-raccoon-down${suffix}`;
@@ -789,9 +786,9 @@ function addRoomDetails(scene: Phaser.Scene): Array<Phaser.GameObjects.Rectangle
 export class GameRenderer {
   private objects: RenderObjects | null = null;
   private lastNoiseRippleAtMs = Number.NEGATIVE_INFINITY;
+  private readonly pulsingHealingPickups = new Set<string>();
   private playerImageKey: string | null = null;
   private lastPlayerRenderPosition: Vector | null = null;
-  private lastPlayerMovedAtMs = Number.NEGATIVE_INFINITY;
 
   describe(snapshot: SimulationSnapshot): RenderDescriptors {
     return {
@@ -1019,15 +1016,9 @@ export class GameRenderer {
         descriptors.player.x - this.lastPlayerRenderPosition.x,
         descriptors.player.y - this.lastPlayerRenderPosition.y,
       ) > 0.05;
-    const renderTimeMs = scene.time?.now ?? snapshot.timeMs;
-    if (playerMoved) {
-      this.lastPlayerMovedAtMs = renderTimeMs;
-    }
-    const playerWalking = !descriptors.player.hidden && renderTimeMs - this.lastPlayerMovedAtMs < 180;
-    const playerWalkPhase = renderTimeMs / 95;
-    const playerStep = playerWalking ? Math.sin(playerWalkPhase) : 0;
-    const playerWalkFrame =
-      playerWalking && Math.floor(renderTimeMs / 170) % 2 === 1;
+    const playerWalkPhase = (scene.time?.now ?? snapshot.timeMs) / 95;
+    const playerStep = playerMoved && !descriptors.player.hidden ? Math.sin(playerWalkPhase) : 0;
+    const playerWalkFrame = playerMoved && Math.sin(playerWalkPhase * 0.55) > 0;
     const nextPlayerImageKey = playerImageKey(descriptors.player.facing, playerWalkFrame);
     if (objects.player && this.playerImageKey !== null && this.playerImageKey !== nextPlayerImageKey) {
       objects.player.destroy();
@@ -1045,12 +1036,12 @@ export class GameRenderer {
     }
     const playerBounce = Math.abs(playerStep) * 2.2;
     const playerSway =
-      playerWalking && Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y)
+      playerMoved && Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y)
         ? Math.sign(descriptors.player.facing.x) * playerStep * 1.4
         : 0;
-    animatePlayerFeet(objects.player, descriptors.player.facing, playerWalking, playerStep);
+    animatePlayerFeet(objects.player, descriptors.player.facing, playerMoved && !descriptors.player.hidden, playerStep);
     objects.player.setPosition(descriptors.player.x + playerSway, descriptors.player.y - playerBounce);
-    objects.player.setRotation(playerWalking ? playerStep * 0.035 : 0);
+    objects.player.setRotation(playerMoved ? playerStep * 0.035 : 0);
     if (typeof objects.player.setScale === "function") {
       const sideStep = Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y);
       objects.player.setScale(
@@ -1139,10 +1130,30 @@ export class GameRenderer {
     for (const pickup of descriptors.healingPickups) {
       const existing =
         objects.healingPickups.get(pickup.id) ??
-        scene.add.rectangle(pickup.x, pickup.y, 24, 16, 0xcfffd5, 0.96);
+        (typeof scene.add.image === "function"
+          ? scene.add.image(pickup.x, pickup.y, "bandages").setDisplaySize(32, 32)
+          : scene.add.rectangle(pickup.x, pickup.y, 24, 16, 0xcfffd5, 0.96));
       existing.setPosition(pickup.x, pickup.y);
       existing.setVisible(!pickup.collected);
-      existing.setStrokeStyle(2, 0x72d18b, 0.85);
+      if (pickup.collected) {
+        scene.tweens?.killTweensOf?.(existing);
+        existing.setAlpha?.(1);
+        existing.setScale?.(0.5);
+        this.pulsingHealingPickups.delete(pickup.id);
+      } else if (typeof scene.add.image === "function" && !this.pulsingHealingPickups.has(pickup.id)) {
+        existing.setAlpha?.(1);
+        existing.setScale?.(0.5);
+        scene.tweens?.add?.({
+          targets: existing,
+          scale: 0.57,
+          alpha: 1,
+          duration: 760,
+          ease: "Sine.easeInOut",
+          yoyo: true,
+          repeat: -1,
+        });
+        this.pulsingHealingPickups.add(pickup.id);
+      }
       objects.healingPickups.set(pickup.id, existing);
     }
 

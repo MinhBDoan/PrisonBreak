@@ -6,6 +6,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
+    this.load.image("bandages", "assets/bandages.png");
     this.load.image("cot-side", "assets/cot-side.png");
     this.load.image("player-raccoon-down", "assets/player-raccoon-down.png");
     this.load.image("player-raccoon-down-walk", "assets/player-raccoon-down-walk.png");
