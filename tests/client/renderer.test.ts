@@ -22,12 +22,28 @@ describe("GameRenderer", () => {
       kind: "player",
       x: expect.any(Number),
       y: expect.any(Number),
+      visual: expect.objectContaining({
+        artStyle: "pixel_tactics",
+        variant: "readable_hybrid",
+        species: "raccoon",
+        role: "prisoner",
+        uniformColor: 0xf28c38,
+        playerHighlight: true,
+      }),
     });
-    expect(descriptors.guards).toEqual([
+    expect(descriptors.guards).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: "guard-1",
         kind: "guard",
         state: "patrol",
+        visual: expect.objectContaining({
+          artStyle: "pixel_tactics",
+          variant: "readable_hybrid",
+          species: "dog",
+          role: "guard",
+          silhouette: "side_profile",
+          uniformColor: 0x234f86,
+        }),
         visionCone: expect.objectContaining({
           color: 0xffc857,
           alpha: expect.any(Number),
@@ -42,14 +58,51 @@ describe("GameRenderer", () => {
           alpha: expect.any(Number),
         }),
       }),
-    ]);
+      expect.objectContaining({
+        id: "guard-3",
+        kind: "guard",
+        state: "patrol",
+        visionCone: expect.objectContaining({
+          color: 0xffc857,
+          alpha: expect.any(Number),
+        }),
+      }),
+    ]));
     expect(descriptors.guards[0].visionCone?.alpha).toBeLessThan(0.18);
     expect(descriptors.hidingSpots.map((spot) => spot.id)).toEqual([
       "locker_alpha",
       "locker_bravo",
       "shadow_nook",
+      "open_cell_shadow",
     ]);
     expect(descriptors.hidingSpots.some((spot) => spot.bodyOccupied)).toBe(false);
+    expect(descriptors.setDressingObjects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "starter_cell_bars", kind: "bars", visual: null }),
+      expect.objectContaining({ id: "starter_cell_cot", kind: "cot", visual: null }),
+      expect.objectContaining({ id: "starter_cell_toilet", kind: "toilet", visual: null }),
+      expect.objectContaining({
+        id: "prisoner_cell_a_prisoner",
+        kind: "prisoner",
+        visual: expect.objectContaining({
+          artStyle: "pixel_tactics",
+          variant: "readable_hybrid",
+          role: "prisoner",
+          uniformColor: 0xf28c38,
+          playerHighlight: false,
+        }),
+      }),
+      expect.objectContaining({
+        id: "prisoner_cell_b_prisoner",
+        kind: "prisoner",
+        visual: expect.objectContaining({
+          artStyle: "pixel_tactics",
+          variant: "readable_hybrid",
+          role: "prisoner",
+          uniformColor: 0xf28c38,
+          playerHighlight: false,
+        }),
+      }),
+    ]));
     expect(descriptors.coverObjects).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: "crate_central_alpha",
@@ -63,7 +116,12 @@ describe("GameRenderer", () => {
       expect.objectContaining({ id: "central_service_wall_left" }),
       expect.objectContaining({ id: "central_service_wall_right" }),
     ]));
-    expect(descriptors.doors).toEqual([
+    expect(descriptors.doors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "starter_cell_door",
+        open: false,
+        unlocked: true,
+      }),
       expect.objectContaining({
         id: "security_room_door",
         open: false,
@@ -81,14 +139,668 @@ describe("GameRenderer", () => {
         open: false,
         unlocked: true,
       }),
-    ]);
+    ]));
     expect(descriptors.objectives.key.id).toBe("master_key");
     expect(descriptors.objectives.key.color).toBe(0x57d7ff);
     expect(descriptors.objectives.key.strokeColor).toBe(0xd7f7ff);
     expect(descriptors.objectives.exit.id).toBe("locked_exit");
   });
 
-  it("swings open doors around a hinge edge instead of their center", () => {
+  it("assigns deterministic animal variants to NPC prisoner dressing", () => {
+    const descriptors = new GameRenderer().describe(new GameSimulation().getSnapshot());
+
+    const prisoners = descriptors.setDressingObjects.filter((object) => object.kind === "prisoner");
+
+    expect(prisoners.map((object) => object.visual?.species)).toEqual(["raccoon", "cat"]);
+    expect(prisoners.every((object) => object.visual?.uniformColor === 0xf28c38)).toBe(true);
+    expect(prisoners.every((object) => object.visual?.role === "prisoner")).toBe(true);
+  });
+
+  it("describes guard sprite facing so dog guards can look toward patrol direction", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [
+        { id: "guard-left", position: { x: 18.5, y: 5.5 }, facing: { x: -1, y: 0 } },
+        { id: "guard-right", position: { x: 20.5, y: 5.5 }, facing: { x: 1, y: 0 } },
+        { id: "guard-down", position: { x: 22.5, y: 5.5 }, facing: { x: 0, y: 1 } },
+      ],
+    });
+
+    const guards = new GameRenderer().describe(simulation.getSnapshot()).guards;
+
+    expect(guards).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "guard-left", spriteFacingX: -1 }),
+      expect.objectContaining({ id: "guard-right", spriteFacingX: 1 }),
+    ]));
+    expect(guards.find((guard) => guard.id === "guard-left")?.visual.silhouette).toBe("side_profile");
+    expect(guards.find((guard) => guard.id === "guard-right")?.visual.silhouette).toBe("side_profile");
+    expect(guards.find((guard) => guard.id === "guard-down")?.visual.silhouette).toBe("front");
+  });
+
+  it("creates character containers for prisoner dressing instead of flat rectangles", () => {
+    const renderer = new GameRenderer();
+    const createdContainers: Array<{ depth: number | null; scale: number | null }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const container = {
+            list: children,
+            depth: null as number | null,
+            scale: null as number | null,
+            setPosition: () => container,
+            setScale: (scale: number) => {
+              container.scale = scale;
+              return container;
+            },
+            setDepth: (depth: number) => {
+              container.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          createdContainers.push(container);
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    expect(createdContainers.length).toBeGreaterThanOrEqual(6);
+    expect(createdContainers.filter((container) => container.depth === 5 && container.scale === 1)).toHaveLength(2);
+  });
+
+  it("renders the player with warm pixel contrast chips separate from guards", () => {
+    const renderer = new GameRenderer();
+    const descriptors = renderer.describe(new GameSimulation().getSnapshot());
+    const playerDescriptor = descriptors.player;
+    let pendingColors: number[] = [];
+    const playerContainers: Array<{
+      childCount: number;
+      colors: number[];
+      depth: number | null;
+      scale: number | null;
+      x: number | null;
+      y: number | null;
+    }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const colors = pendingColors.slice(-children.length);
+          pendingColors = [];
+          const container = {
+            list: children,
+            depth: null as number | null,
+            scale: null as number | null,
+            x: null as number | null,
+            y: null as number | null,
+            setPosition: (x: number, y: number) => {
+              container.x = x;
+              container.y = y;
+              return container;
+            },
+            setScale: (scale: number) => {
+              container.scale = scale;
+              return container;
+            },
+            setDepth: (depth: number) => {
+              container.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          playerContainers.push({
+            childCount: children.length,
+            colors,
+            depth: container.depth,
+            scale: container.scale,
+            x: container.x,
+            y: container.y,
+          });
+          const index = playerContainers.length - 1;
+          container.setPosition = (x: number, y: number) => {
+            container.x = x;
+            container.y = y;
+            playerContainers[index].x = x;
+            playerContainers[index].y = y;
+            return container;
+          };
+          container.setScale = (scale: number) => {
+            container.scale = scale;
+            playerContainers[index].scale = scale;
+            return container;
+          };
+          container.setDepth = (depth: number) => {
+            container.depth = depth;
+            playerContainers[index].depth = depth;
+            return container;
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    const playerContainer = playerContainers.find(
+      (container) =>
+        container.x === playerDescriptor.x &&
+        container.y === playerDescriptor.y &&
+        container.depth === 18,
+    );
+
+    expect(playerContainer?.childCount).toBeGreaterThanOrEqual(5);
+    const playerColors = playerContainer?.colors ?? [];
+    expect(playerColors).toEqual(expect.arrayContaining([0xffd166, 0xf8fbff]));
+  });
+
+  it("renders set dressing props as pixel object containers", () => {
+    const renderer = new GameRenderer();
+    const createdContainers: Array<{ depth: number | null; childCount: number }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const container = {
+            list: children,
+            depth: null as number | null,
+            setPosition: () => container,
+            setScale: () => container,
+            setDepth: (depth: number) => {
+              container.depth = depth;
+              return container;
+            },
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          createdContainers.push({ depth: container.depth, childCount: children.length });
+          const index = createdContainers.length - 1;
+          container.setDepth = (depth: number) => {
+            container.depth = depth;
+            createdContainers[index].depth = depth;
+            return container;
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    const propContainers = createdContainers.filter((container) => container.depth === 3);
+    expect(propContainers.length).toBeGreaterThanOrEqual(10);
+    expect(propContainers.every((container) => container.childCount >= 2)).toBe(true);
+  });
+
+  it("renders cots with readable pillow and uneven in-use bedding pieces", () => {
+    const renderer = new GameRenderer();
+    const descriptors = renderer.describe(new GameSimulation().getSnapshot());
+    const cotDescriptors = descriptors.setDressingObjects.filter((object) => object.kind === "cot");
+    let pendingColors: number[] = [];
+    const cotContainers: Array<{ childCount: number; colors: number[]; x: number | null; y: number | null }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        ellipse: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const colors = pendingColors.slice(-children.length);
+          pendingColors = [];
+          const container = {
+            list: children,
+            x: null as number | null,
+            y: null as number | null,
+            setPosition: (x: number, y: number) => {
+              container.x = x;
+              container.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          cotContainers.push({ childCount: children.length, colors, x: container.x, y: container.y });
+          const index = cotContainers.length - 1;
+          container.setPosition = (x: number, y: number) => {
+            container.x = x;
+            container.y = y;
+            cotContainers[index].x = x;
+            cotContainers[index].y = y;
+            return container;
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    const renderedCots = cotContainers.filter((container) =>
+      cotDescriptors.some((cot) => cot.x === container.x && cot.y === container.y),
+    );
+
+    expect(renderedCots).toHaveLength(cotDescriptors.length);
+    expect(renderedCots.every((cot) => cot.childCount >= 10 && cot.childCount <= 12)).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0xf2f6fa))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0xc8d3dc))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0x5f786f))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0xe6ece8))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0x789083))).toBe(true);
+    expect(renderedCots.every((cot) => cot.colors.includes(0x151d24))).toBe(true);
+  });
+
+  it("renders toilets as right-facing fixtures with a larger bowl and wider lid", () => {
+    const renderer = new GameRenderer();
+    const descriptors = renderer.describe(new GameSimulation().getSnapshot());
+    const toiletDescriptors = descriptors.setDressingObjects.filter((object) => object.kind === "toilet");
+    let pendingColors: number[] = [];
+    const toiletContainers: Array<{ childCount: number; colors: number[]; x: number | null; y: number | null }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        ellipse: (_x: number, _y: number, _width: number, _height: number, fillColor: number) => {
+          pendingColors.push(fillColor);
+          return rectangle;
+        },
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const colors = pendingColors.slice(-children.length);
+          pendingColors = [];
+          const container = {
+            list: children,
+            x: null as number | null,
+            y: null as number | null,
+            setPosition: (x: number, y: number) => {
+              container.x = x;
+              container.y = y;
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          toiletContainers.push({ childCount: children.length, colors, x: container.x, y: container.y });
+          const index = toiletContainers.length - 1;
+          container.setPosition = (x: number, y: number) => {
+            container.x = x;
+            container.y = y;
+            toiletContainers[index].x = x;
+            toiletContainers[index].y = y;
+            return container;
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    const renderedToilets = toiletContainers.filter((container) =>
+      toiletDescriptors.some((toilet) => toilet.x === container.x && toilet.y === container.y),
+    );
+
+    expect(renderedToilets).toHaveLength(toiletDescriptors.length);
+    expect(renderedToilets.every((toilet) => toilet.childCount >= 6)).toBe(true);
+    expect(renderedToilets.every((toilet) => toilet.colors.includes(0x273642))).toBe(true);
+    expect(renderedToilets.every((toilet) => toilet.colors.includes(0x91a8b6))).toBe(true);
+  });
+
+  it("renders storage and security identity props as multi-part pixel containers", () => {
+    const renderer = new GameRenderer();
+    const renderedProps: Array<{ id: string; childCount: number }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setPosition: () => rectangle,
+      setSize: () => rectangle,
+      setFillStyle: () => rectangle,
+      setStrokeStyle: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+      setAlpha: () => rectangle,
+      setVisible: () => rectangle,
+      setBlendMode: () => rectangle,
+    };
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: unknown[]) => {
+          const container = {
+            list: children,
+            setPosition: (x: number, y: number) => {
+              const match = new GameRenderer().describe(new GameSimulation().getSnapshot()).setDressingObjects.find(
+                (object) => object.x === x && object.y === y,
+              );
+              if (
+                match &&
+                [
+                  "storage_supply_shelf",
+                  "storage_floor_labels",
+                  "storage_supply_boxes",
+                  "security_wall_panel",
+                  "security_camera_marker",
+                  "security_status_lights",
+                ].includes(match.id)
+              ) {
+                renderedProps.push({ id: match.id, childCount: children.length });
+              }
+              return container;
+            },
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+
+    renderer.render(scene as never, new GameSimulation().getSnapshot());
+
+    expect(renderedProps).toEqual(expect.arrayContaining([
+      { id: "storage_supply_shelf", childCount: expect.any(Number) },
+      { id: "storage_floor_labels", childCount: expect.any(Number) },
+      { id: "storage_supply_boxes", childCount: expect.any(Number) },
+      { id: "security_wall_panel", childCount: expect.any(Number) },
+      { id: "security_camera_marker", childCount: expect.any(Number) },
+      { id: "security_status_lights", childCount: expect.any(Number) },
+    ]));
+    expect(renderedProps.every((prop) => prop.childCount >= 3)).toBe(true);
+  });
+
+  it("destroys old guard sprite parts when facing changes to a different silhouette", () => {
+    const renderer = new GameRenderer();
+    let childDestroyCount = 0;
+    let containerDestroyCount = 0;
+    const createShape = () => ({
+      destroy: () => {
+        childDestroyCount += 1;
+      },
+      setOrigin: () => createShape(),
+      setPosition: () => createShape(),
+      setSize: () => createShape(),
+      setFillStyle: () => createShape(),
+      setStrokeStyle: () => createShape(),
+      setDepth: () => createShape(),
+      setRotation: () => createShape(),
+      setAlpha: () => createShape(),
+      setVisible: () => createShape(),
+      setBlendMode: () => createShape(),
+    });
+    const rectangle = createShape();
+    const scene = {
+      add: {
+        rectangle: () => rectangle,
+        ellipse: () => rectangle,
+        container: (_x: number, _y: number, children: Array<{ destroy?: () => void }>) => {
+          const container = {
+            list: children,
+            destroy: () => {
+              containerDestroyCount += 1;
+            },
+            setPosition: () => container,
+            setScale: () => container,
+            setDepth: () => container,
+            setAlpha: () => container,
+            setVisible: () => container,
+            setRotation: () => container,
+          };
+          return container;
+        },
+        circle: () => rectangle,
+        star: () => rectangle,
+        graphics: () => ({
+          clear: () => undefined,
+          setDepth: () => undefined,
+          lineStyle: () => undefined,
+          beginPath: () => undefined,
+          moveTo: () => undefined,
+          lineTo: () => undefined,
+          strokePath: () => undefined,
+          fillStyle: () => undefined,
+          slice: () => undefined,
+          fillPath: () => undefined,
+        }),
+      },
+      cameras: { main: { setBounds: () => undefined, centerOn: () => undefined } },
+    };
+    const downward = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 18.5, y: 5.5 }, facing: { x: 0, y: 1 } }],
+    });
+    const sideways = new GameSimulation({
+      guardOverrides: [{ id: "guard-a", position: { x: 18.5, y: 5.5 }, facing: { x: 1, y: 0 } }],
+    });
+
+    renderer.render(scene as never, downward.getSnapshot());
+    renderer.render(scene as never, sideways.getSnapshot());
+
+    expect(containerDestroyCount).toBe(1);
+    expect(childDestroyCount).toBeGreaterThan(0);
+  });
+
+  it("mounts room identity details over the base tile map", () => {
+    const renderer = new GameRenderer();
+    const rectangles: Array<{ alpha?: number; fillColor?: number; strokeColor?: number }> = [];
+    const circles: Array<{ alpha?: number; fillColor?: number }> = [];
+    const rectangle = {
+      setOrigin: () => rectangle,
+      setStrokeStyle: (_lineWidth: number, strokeColor: number) => {
+        rectangles[rectangles.length - 1].strokeColor = strokeColor;
+        return rectangle;
+      },
+      setBlendMode: () => rectangle,
+      setDepth: () => rectangle,
+      setRotation: () => rectangle,
+    };
+    const circle = {
+      setBlendMode: () => circle,
+      setDepth: () => circle,
+    };
+    const scene = {
+      add: {
+        rectangle: (_x: number, _y: number, _width: number, _height: number, fillColor: number, alpha?: number) => {
+          rectangles.push({ fillColor, alpha });
+          return rectangle;
+        },
+        circle: (_x: number, _y: number, _radius: number, fillColor: number, alpha?: number) => {
+          circles.push({ fillColor, alpha });
+          return circle;
+        },
+      },
+    };
+
+    renderer.mount(scene as never);
+
+    expect(rectangles.length).toBeGreaterThan(260);
+    expect(rectangles.some((rect) => rect.fillColor === 0x1f2c38 && rect.alpha === 0.78)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x1a2430 && rect.alpha === 0.76)).toBe(true);
+    expect(rectangles.some((rect) => rect.strokeColor === 0x465b6c)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x526171 && rect.alpha === 0.52)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x071018 && rect.alpha === 0.42)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x2d3a47 && rect.alpha === 0.34)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0xffd166 && rect.alpha === 0.36)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0x75e1ff && rect.alpha === 0.42)).toBe(true);
+    expect(rectangles.some((rect) => rect.fillColor === 0xff5f56 && rect.alpha === 0.46)).toBe(true);
+    expect(circles.some((light) => light.fillColor === 0x6bd3ff)).toBe(true);
+    expect(circles.some((light) => light.fillColor === 0xffd166)).toBe(true);
+  });
+
+  it("swings player-opened doors away from the player around a hinge edge", () => {
     const simulation = new GameSimulation();
     simulation.setPlayerPosition({ x: 14.5, y: 6.45 });
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
@@ -103,6 +815,22 @@ describe("GameRenderer", () => {
       hingeY: 380.8,
       originX: 0,
       originY: 0.5,
+      visualRotation: -Math.PI / 2,
+    });
+  });
+
+  it("swings doors away from guards when guards open them", () => {
+    const simulation = new GameSimulation({
+      guardOverrides: [{ id: "guard-1", position: { x: 14.5, y: 5.4 }, facing: { x: 0, y: 1 } }],
+    });
+    simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: false });
+
+    const door = new GameRenderer()
+      .describe(simulation.getSnapshot())
+      .doors.find((candidate) => candidate.id === "central_service_door");
+
+    expect(door).toMatchObject({
+      open: true,
       visualRotation: Math.PI / 2,
     });
   });

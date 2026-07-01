@@ -1,10 +1,21 @@
 import type Phaser from "phaser";
 import { prisonMap } from "../game/map";
-import type { Door, DoorKeyPickup, GuardStateSnapshot, HealingPickup, HidingSpot, SimulationSnapshot, Vector, WeaponPickup } from "../game/types";
+import type {
+  Door,
+  DoorKeyPickup,
+  GuardStateSnapshot,
+  HealingPickup,
+  HidingSpot,
+  SetDressingKind,
+  SimulationSnapshot,
+  Vector,
+  WeaponPickup,
+} from "../game/types";
 
 export const renderScale = 64;
 const noiseRippleCooldownMs = 500;
 const pebbleThrowRange = 4;
+const npcPrisonerSpriteScale = 1;
 
 export type VisionConeDescriptor = {
   x: number;
@@ -23,6 +34,20 @@ export type EntityDescriptor = {
   y: number;
 };
 
+export type CharacterSpecies = "raccoon" | "dog" | "cat" | "possum";
+
+export type CharacterVisualDescriptor = {
+  artStyle: "pixel_tactics";
+  variant: "readable_hybrid";
+  species: CharacterSpecies;
+  role: "prisoner" | "guard";
+  silhouette: "front" | "side_profile";
+  uniformColor: number;
+  accentColor: number;
+  outlineColor: number;
+  playerHighlight: boolean;
+};
+
 export type KeyVisualDescriptor = {
   color: number;
   strokeColor: number;
@@ -36,14 +61,25 @@ export type GuardDescriptor = EntityDescriptor & {
   hiddenBody: boolean;
   health: GuardStateSnapshot["health"];
   suspicion: number;
+  spriteFacingX: 1 | -1;
+  visual: CharacterVisualDescriptor;
   visionCone: VisionConeDescriptor | null;
 };
 
 export type RenderDescriptors = {
-  player: EntityDescriptor & { hidden: boolean };
+  player: EntityDescriptor & { hidden: boolean; facing: Vector; visual: CharacterVisualDescriptor };
   guards: GuardDescriptor[];
   hidingSpots: Array<EntityDescriptor & { type: HidingSpot["type"]; bodyOccupied: boolean }>;
   coverObjects: Array<EntityDescriptor & { width: number; height: number }>;
+  setDressingObjects: Array<{
+    id: string;
+    kind: SetDressingKind;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    visual: CharacterVisualDescriptor | null;
+  }>;
   pebbles: Array<EntityDescriptor & { collected: boolean }>;
   weaponPickups: Array<EntityDescriptor & { collected: boolean; weaponId: WeaponPickup["weaponId"] }>;
   healingPickups: Array<EntityDescriptor & { collected: boolean; amount: HealingPickup["amount"] }>;
@@ -58,6 +94,7 @@ export type RenderDescriptors = {
       originX: number;
       originY: number;
       visualRotation: number;
+      swingDirection: 1 | -1;
     }
   >;
   doorKeyPickups: Array<EntityDescriptor & { collected: boolean; keyId: DoorKeyPickup["keyId"] } & KeyVisualDescriptor>;
@@ -72,14 +109,17 @@ type RenderObjects = {
   floors: Phaser.GameObjects.Rectangle[];
   walls: Phaser.GameObjects.Rectangle[];
   lights: Phaser.GameObjects.Arc[];
-  player?: Phaser.GameObjects.Arc;
+  roomDetails: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Arc>;
+  player?: Phaser.GameObjects.Container;
   guards: Map<string, Phaser.GameObjects.Container>;
+  guardSilhouettes: Map<string, CharacterVisualDescriptor["silhouette"]>;
   guardCones: Map<string, Phaser.GameObjects.Graphics>;
   hidingSpots: Map<string, Phaser.GameObjects.Rectangle>;
   coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
+  setDressingObjects: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Container>;
   pebbles: Map<string, Phaser.GameObjects.Arc>;
   weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
-  healingPickups: Map<string, Phaser.GameObjects.Rectangle>;
+  healingPickups: Map<string, Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle>;
   doors: Map<string, Phaser.GameObjects.Rectangle>;
   doorKeyPickups: Map<string, Phaser.GameObjects.Star>;
   aimLine?: Phaser.GameObjects.Graphics;
@@ -165,9 +205,590 @@ function guardCone(guard: GuardStateSnapshot): VisionConeDescriptor | null {
   };
 }
 
+function spriteFacingX(facing: Vector): 1 | -1 {
+  return facing.x < 0 ? -1 : 1;
+}
+
+function setDressingFill(kind: SetDressingKind): number {
+  if (kind === "bars") {
+    return 0x9aa7b4;
+  }
+  if (kind === "cot") {
+    return 0x475766;
+  }
+  if (kind === "bench") {
+    return 0x5f4938;
+  }
+  if (kind === "toilet") {
+    return 0xc8d3dc;
+  }
+  if (kind === "prisoner") {
+    return 0x6f8799;
+  }
+  if (kind === "desk") {
+    return 0x4d3f34;
+  }
+  if (kind === "monitor") {
+    return 0x6bd3ff;
+  }
+  if (kind === "weapon_rack") {
+    return 0x8b929a;
+  }
+  if (kind === "supply_shelf") {
+    return 0x5f4938;
+  }
+  if (kind === "supply_boxes") {
+    return 0xd6a04f;
+  }
+  if (kind === "floor_label") {
+    return 0xffd166;
+  }
+  if (kind === "control_panel") {
+    return 0x173142;
+  }
+  if (kind === "camera_marker") {
+    return 0x8b929a;
+  }
+  if (kind === "status_lights") {
+    return 0x6bd3ff;
+  }
+  return 0xe6d7a8;
+}
+
+function setDressingStroke(kind: SetDressingKind): number {
+  if (kind === "bars") {
+    return 0xd5dde5;
+  }
+  if (kind === "cot") {
+    return 0x7f93a8;
+  }
+  if (kind === "bench") {
+    return 0xaa7a52;
+  }
+  if (kind === "toilet") {
+    return 0xf0f6fa;
+  }
+  if (kind === "prisoner") {
+    return 0xb6c6d2;
+  }
+  if (kind === "desk") {
+    return 0x9b7459;
+  }
+  if (kind === "monitor") {
+    return 0xd7f7ff;
+  }
+  if (kind === "weapon_rack") {
+    return 0xffd166;
+  }
+  if (kind === "supply_shelf") {
+    return 0xb28b63;
+  }
+  if (kind === "supply_boxes") {
+    return 0xffd166;
+  }
+  if (kind === "floor_label") {
+    return 0xfff0b8;
+  }
+  if (kind === "control_panel") {
+    return 0x6bd3ff;
+  }
+  if (kind === "camera_marker") {
+    return 0xd5dde5;
+  }
+  if (kind === "status_lights") {
+    return 0xd7f7ff;
+  }
+  return 0xffefb0;
+}
+
+function setDressingAlpha(kind: SetDressingKind): number {
+  if (kind === "monitor") {
+    return 0.72;
+  }
+  if (kind === "floor_label") {
+    return 0.58;
+  }
+  if (kind === "control_panel" || kind === "camera_marker" || kind === "status_lights") {
+    return 0.9;
+  }
+  return kind === "floor_marking" ? 0.35 : 0.86;
+}
+
+function playerVisual(): CharacterVisualDescriptor {
+  return {
+    artStyle: "pixel_tactics",
+    variant: "readable_hybrid",
+    species: "raccoon",
+    role: "prisoner",
+    silhouette: "front",
+    uniformColor: 0xf28c38,
+    accentColor: 0xffd166,
+    outlineColor: 0x0b1118,
+    playerHighlight: true,
+  };
+}
+
+function guardSilhouette(facing: Vector): CharacterVisualDescriptor["silhouette"] {
+  return facing.y > 0 && Math.abs(facing.y) >= Math.abs(facing.x) ? "front" : "side_profile";
+}
+
+function guardVisual(facing: Vector): CharacterVisualDescriptor {
+  return {
+    artStyle: "pixel_tactics",
+    variant: "readable_hybrid",
+    species: "dog",
+    role: "guard",
+    silhouette: guardSilhouette(facing),
+    uniformColor: 0x234f86,
+    accentColor: 0xc7d1db,
+    outlineColor: 0x101820,
+    playerHighlight: false,
+  };
+}
+
+const npcPrisonerSpecies: CharacterSpecies[] = ["raccoon", "cat", "possum"];
+
+function stableSpeciesIndex(id: string): number {
+  return [...id].reduce((sum, character) => sum + character.charCodeAt(0), 0) % npcPrisonerSpecies.length;
+}
+
+function npcPrisonerVisual(id: string): CharacterVisualDescriptor {
+  return {
+    artStyle: "pixel_tactics",
+    variant: "readable_hybrid",
+    species: npcPrisonerSpecies[stableSpeciesIndex(id)],
+    role: "prisoner",
+    silhouette: "front",
+    uniformColor: 0xf28c38,
+    accentColor: 0xffd166,
+    outlineColor: 0x0b1118,
+    playerHighlight: false,
+  };
+}
+
+function addPixelRect(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: number,
+  alpha = 1,
+): Phaser.GameObjects.Rectangle {
+  return scene.add.rectangle(x, y, width, height, color, alpha).setOrigin(0.5);
+}
+
+function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
+  const hasMask = visual.species === "raccoon";
+  const skinColor = visual.species === "possum" ? 0xb8aeb6 : visual.species === "cat" ? 0xb9946b : 0x8d9bab;
+  const tailColor = visual.species === "possum" ? 0xd2b7c0 : visual.species === "cat" ? 0x9b7654 : 0x6f7d8d;
+  const earHeight = visual.species === "cat" ? 10 : visual.species === "possum" ? 9 : 7;
+  const earWidth = visual.species === "cat" ? 7 : 6;
+  const snoutColor = visual.species === "possum" ? 0xe0c7cf : visual.species === "cat" ? 0xd7b58d : 0xb5c1ca;
+  const tailHeight = visual.species === "possum" ? 24 : visual.species === "cat" ? 21 : 18;
+  const tailRotation = visual.species === "cat" ? -0.12 : -0.3;
+  const shadow = scene.add.ellipse(0, 17, 30, 10, 0x081018, 0.24);
+  const tail = addPixelRect(scene, -14, 6, 7, tailHeight, tailColor).setRotation(tailRotation);
+  tail.setStrokeStyle(2, visual.outlineColor, 0.9);
+  const legLeft = addPixelRect(scene, -5, 21, 6, 10, 0x172231);
+  const legRight = addPixelRect(scene, 5, 21, 6, 10, 0x172231);
+  const armLeft = addPixelRect(scene, -13, 5, 5, 18, skinColor);
+  const armRight = addPixelRect(scene, 13, 5, 5, 18, skinColor);
+  const body = addPixelRect(scene, 0, 5, 21, 26, visual.uniformColor);
+  body.setStrokeStyle(2, visual.outlineColor, 0.96);
+  const stripeA = addPixelRect(scene, 0, -1, 17, 3, visual.accentColor, 0.95);
+  const stripeB = addPixelRect(scene, 0, 8, 17, 3, visual.accentColor, 0.95);
+  const playerMark = visual.playerHighlight ? addPixelRect(scene, 0, -28, 12, 3, visual.accentColor, 0.98) : null;
+  const head = addPixelRect(scene, 0, -15, 20, 17, skinColor);
+  head.setStrokeStyle(2, visual.outlineColor, 0.96);
+  const earLeft = addPixelRect(scene, -7, -26, earWidth, earHeight, skinColor);
+  const earRight = addPixelRect(scene, 7, -26, earWidth, earHeight, skinColor);
+  const mask = hasMask ? addPixelRect(scene, 0, -17, 18, 5, 0x202a36) : null;
+  const snout = addPixelRect(scene, visual.species === "possum" ? 1 : 0, -11, visual.species === "possum" ? 10 : 8, 4, snoutColor);
+  const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0xf8fbff);
+  const eyeRight = addPixelRect(scene, 4, -17, 2, 2, 0xf8fbff);
+
+  const parts = [
+    shadow,
+    tail,
+    legLeft,
+    legRight,
+    armLeft,
+    armRight,
+    body,
+    stripeA,
+    stripeB,
+    head,
+    earLeft,
+    earRight,
+    snout,
+    eyeLeft,
+    eyeRight,
+  ];
+  if (mask) {
+    parts.push(mask);
+  }
+  if (playerMark) {
+    parts.push(playerMark);
+  }
+
+  return scene.add.container(0, 0, parts);
+}
+
+function playerImageKey(facing: Vector, walking = false): string {
+  const suffix = walking ? "-walk" : "";
+  if (Math.abs(facing.x) > Math.abs(facing.y)) {
+    return facing.x < 0 ? "player-raccoon-right" : "player-raccoon-left";
+  }
+  return facing.y < 0 ? `player-raccoon-up${suffix}` : `player-raccoon-down${suffix}`;
+}
+
+function createPlayerImageSprite(
+  scene: Phaser.Scene,
+  visual: CharacterVisualDescriptor,
+  facing: Vector,
+  walking = false,
+): Phaser.GameObjects.Container {
+  if (visual.species !== "raccoon" || typeof scene.add.image !== "function") {
+    return createPlayerSprite(scene, visual);
+  }
+  const shadow = scene.add.ellipse(0, 18, 31, 10, 0x081018, 0.24);
+  const sprite = scene.add.image(0, -4, playerImageKey(facing, walking));
+  sprite.setDisplaySize(52, 63);
+  const footBack = addPixelRect(scene, -7, 27, 9, 5, 0x172231, 0.98);
+  const footFront = addPixelRect(scene, 7, 27, 9, 5, 0x172231, 0.98);
+  const parts: Phaser.GameObjects.GameObject[] = [shadow, sprite, footBack, footFront];
+  if (visual.playerHighlight) {
+    parts.push(addPixelRect(scene, 0, -39, 14, 3, visual.accentColor, 0.98));
+  }
+  return scene.add.container(0, 0, parts);
+}
+
+function animatePlayerFeet(
+  container: Phaser.GameObjects.Container,
+  facing: Vector,
+  walking: boolean,
+  step: number,
+): void {
+  const footBack = container.list[2] as Phaser.GameObjects.Rectangle | undefined;
+  const footFront = container.list[3] as Phaser.GameObjects.Rectangle | undefined;
+  if (!footBack || !footFront || typeof footBack.setPosition !== "function" || typeof footFront.setPosition !== "function") {
+    return;
+  }
+
+  if (!walking) {
+    footBack.setPosition(-7, 27);
+    footFront.setPosition(7, 27);
+    footBack.setAlpha(0.98);
+    footFront.setAlpha(0.98);
+    return;
+  }
+
+  const stride = Math.sign(step || 1);
+  if (Math.abs(facing.x) > Math.abs(facing.y)) {
+    const direction = Math.sign(facing.x) || 1;
+    footBack.setPosition(-5 - direction * stride * 4, 27 + stride * 1.5);
+    footFront.setPosition(6 + direction * stride * 4, 27 - stride * 1.5);
+  } else {
+    footBack.setPosition(-8, 27 + stride * 3);
+    footFront.setPosition(8, 27 - stride * 3);
+  }
+  footBack.setAlpha(stride > 0 ? 0.72 : 1);
+  footFront.setAlpha(stride > 0 ? 1 : 0.72);
+}
+
+function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
+  const skinColor = visual.species === "dog" ? 0xa87955 : 0xd8894d;
+  const tailColor = visual.species === "dog" ? 0x7a563d : 0xc36a38;
+  const muzzleColor = visual.species === "dog" ? 0xd7b08d : 0xf3b37b;
+  if (visual.silhouette === "front") {
+    const shadow = scene.add.ellipse(0, 18, 32, 11, 0x081018, 0.28);
+    const tail = addPixelRect(scene, 15, 7, 7, 20, tailColor).setRotation(0.32);
+    tail.setStrokeStyle(2, visual.outlineColor, 0.9);
+    const legLeft = addPixelRect(scene, -6, 23, 7, 10, 0x1c2633);
+    const legRight = addPixelRect(scene, 6, 23, 7, 10, 0x1c2633);
+    const armLeft = addPixelRect(scene, -15, 6, 6, 19, skinColor);
+    const armRight = addPixelRect(scene, 15, 6, 6, 19, skinColor);
+    const baton = addPixelRect(scene, 20, 8, 4, 20, 0xc7d1db).setRotation(-0.22);
+    const body = addPixelRect(scene, 0, 6, 24, 28, visual.uniformColor);
+    body.setStrokeStyle(2, visual.outlineColor, 0.96);
+    const shirt = addPixelRect(scene, 0, 0, 16, 8, visual.accentColor, 1);
+    const belt = addPixelRect(scene, 0, 11, 23, 4, visual.accentColor);
+    const badge = addPixelRect(scene, 7, 1, 4, 5, 0xffd166);
+    const head = addPixelRect(scene, 0, -16, 21, 18, skinColor);
+    head.setStrokeStyle(2, visual.outlineColor, 0.96);
+    const earLeft = addPixelRect(scene, -9, -25, 6, 13, skinColor).setRotation(-0.18);
+    const earRight = addPixelRect(scene, 9, -25, 6, 13, skinColor).setRotation(0.18);
+    const muzzle = addPixelRect(scene, 0, -10, 13, 6, muzzleColor);
+    const nose = addPixelRect(scene, 0, -13, 5, 3, 0x191411);
+    const cap = addPixelRect(scene, 0, -26, 21, 5, visual.accentColor);
+    cap.setStrokeStyle(2, visual.outlineColor, 0.9);
+    const eyeLeft = addPixelRect(scene, -4, -17, 2, 2, 0x101820);
+    const eyeRight = addPixelRect(scene, 4, -17, 2, 2, 0x101820);
+
+    return scene.add.container(0, 0, [
+      shadow,
+      tail,
+      legLeft,
+      legRight,
+      armLeft,
+      armRight,
+      baton,
+      body,
+      shirt,
+      belt,
+      badge,
+      head,
+      earLeft,
+      earRight,
+      muzzle,
+      nose,
+      cap,
+      eyeLeft,
+      eyeRight,
+    ]);
+  }
+
+  const shadow = scene.add.ellipse(0, 18, 32, 11, 0x081018, 0.28);
+  const tail = addPixelRect(scene, -16, 8, 7, 19, tailColor).setRotation(-0.42);
+  tail.setStrokeStyle(2, visual.outlineColor, 0.9);
+  const legLeft = addPixelRect(scene, -6, 23, 7, 10, 0x1c2633);
+  const legRight = addPixelRect(scene, 6, 23, 7, 10, 0x1c2633);
+  const armBack = addPixelRect(scene, -10, 6, 5, 18, skinColor).setRotation(0.08);
+  const armFront = addPixelRect(scene, 13, 6, 6, 20, skinColor).setRotation(-0.14);
+  const baton = addPixelRect(scene, 19, 9, 4, 22, 0xc7d1db).setRotation(-0.32);
+  const body = addPixelRect(scene, 1, 6, 23, 28, visual.uniformColor);
+  body.setStrokeStyle(2, visual.outlineColor, 0.96);
+  const shirt = addPixelRect(scene, 4, 0, 14, 8, visual.accentColor, 1);
+  const belt = addPixelRect(scene, 1, 11, 22, 4, visual.accentColor);
+  const badge = addPixelRect(scene, 9, 1, 4, 5, 0xffd166);
+  const neck = addPixelRect(scene, -2, -5, 8, 8, skinColor);
+  const head = addPixelRect(scene, 3, -17, 19, 17, skinColor);
+  head.setStrokeStyle(2, visual.outlineColor, 0.96);
+  const earBack = addPixelRect(scene, -3, -27, 6, 11, skinColor).setRotation(-0.18);
+  const earFront = addPixelRect(scene, 8, -27, 6, 14, skinColor).setRotation(0.22);
+  const muzzle = addPixelRect(scene, 13, -13, 15, 7, muzzleColor);
+  const nose = addPixelRect(scene, 21, -14, 5, 3, 0x191411);
+  const cap = addPixelRect(scene, 5, -27, 20, 5, visual.accentColor);
+  cap.setStrokeStyle(2, visual.outlineColor, 0.9);
+  const eye = addPixelRect(scene, 10, -18, 2, 2, 0x101820);
+
+  return scene.add.container(0, 0, [
+    shadow,
+    tail,
+    legLeft,
+    legRight,
+    armBack,
+    armFront,
+    baton,
+    body,
+    shirt,
+    belt,
+    badge,
+    neck,
+    head,
+    earBack,
+    earFront,
+    muzzle,
+    nose,
+    cap,
+    eye,
+  ]);
+}
+
+function destroyContainerWithChildren(container: Phaser.GameObjects.Container): void {
+  for (const child of container.list) {
+    if (child && typeof (child as { destroy?: () => void }).destroy === "function") {
+      (child as { destroy: () => void }).destroy();
+    }
+  }
+  container.destroy();
+}
+
+function createSetDressingSprite(
+  scene: Phaser.Scene,
+  kind: SetDressingKind,
+  width: number,
+  height: number,
+): Phaser.GameObjects.Container {
+  const parts: Phaser.GameObjects.GameObject[] = [];
+  const addPart = (
+    x: number,
+    y: number,
+    partWidth: number,
+    partHeight: number,
+    color: number,
+    stroke = setDressingStroke(kind),
+    alpha = setDressingAlpha(kind),
+  ): Phaser.GameObjects.Rectangle => {
+    const part = addPixelRect(scene, x, y, partWidth, partHeight, color, alpha);
+    part.setStrokeStyle(2, stroke, 0.72);
+    parts.push(part);
+    return part;
+  };
+  const addOval = (
+    x: number,
+    y: number,
+    partWidth: number,
+    partHeight: number,
+    color: number,
+    stroke = setDressingStroke(kind),
+    alpha = setDressingAlpha(kind),
+  ): Phaser.GameObjects.Ellipse => {
+    const part = scene.add.ellipse(x, y, partWidth, partHeight, color, alpha);
+    part.setStrokeStyle(2, stroke, 0.72);
+    parts.push(part);
+    return part;
+  };
+
+  if (kind === "cot" && typeof scene.add.image === "function") {
+    const sprite = scene.add.image(0, 0, "cot-side");
+    sprite.setDisplaySize(width * 1.18, height * 1.42);
+    parts.push(sprite);
+  } else if (kind === "toilet" && typeof scene.add.image === "function") {
+    const sprite = scene.add.image(0, 0, "toilet-side");
+    sprite.setDisplaySize(width * 2.05, height * 1.82);
+    parts.push(sprite);
+  } else if (kind === "bars") {
+    const barCount = Math.max(3, Math.floor(width / 12));
+    addPart(0, 0, width, Math.max(4, height), 0x394958, 0x9aa7b4, 0.72);
+    for (let index = 0; index < barCount; index += 1) {
+      const x = -width / 2 + ((index + 0.5) * width) / barCount;
+      addPart(x, 0, 4, Math.max(20, height + 18), 0xb8c6d1, 0xe2e8ef, 0.95);
+    }
+  } else if (kind === "cot") {
+    addPart(0, height * 0.12, width * 0.9, height * 0.6, 0x2a3744, 0x7f93a8, 0.94);
+    addPart(-width * 0.47, -height * 0.02, Math.max(5, width * 0.07), height, 0x151d24, 0x394958, 0.88);
+    addPart(-width * 0.38, height * 0.14, Math.max(4, width * 0.04), height * 0.42, 0xc8d3dc, 0xf2f6fa, 0.92);
+    addPart(width * 0.42, height * 0.18, Math.max(5, width * 0.07), height * 0.72, 0x151d24, 0x394958, 0.88);
+    addPart(0, height * 0.42, width * 0.8, Math.max(4, height * 0.1), 0x151d24, 0x394958, 0.82);
+    addPart(-width * 0.1, height * 0.02, width * 0.58, height * 0.5, 0xe6ece8, 0xffffff, 0.9);
+    addPart(width * 0.15, height * 0.02, width * 0.54, height * 0.46, 0x5f786f, 0xb4c8bc, 0.98);
+    addPart(width * 0.08, height * 0.02, Math.max(1, width * 0.01), height * 0.32, 0x789083, 0xb4c8bc, 0.42);
+    addPart(width * 0.24, height * 0.02, Math.max(1, width * 0.01), height * 0.32, 0x789083, 0xb4c8bc, 0.42);
+    addPart(-width * 0.26, -height * 0.02, width * 0.24, height * 0.34, 0xf2f6fa, 0xffffff, 0.98);
+    addPart(-width * 0.26, height * 0.1, width * 0.2, Math.max(4, height * 0.08), 0xc8d3dc, 0xe9f1f6, 0.82);
+  } else if (kind === "toilet") {
+    addPart(0, height * 0.4, width * 0.78, height * 0.12, 0x91a8b6, 0xf0f6fa, 0.76);
+    addPart(-width * 0.28, height * 0.08, width * 0.36, height * 0.62, 0xc8d3dc, 0xf0f6fa, 0.98);
+    addPart(-width * 0.28, -height * 0.26, width * 0.46, Math.max(5, height * 0.15), 0xe9f1f6, 0xffffff, 0.98);
+    addOval(-width * 0.4, -height * 0.18, width * 0.16, height * 0.1, 0x91a8b6, 0xf0f6fa, 0.92).setRotation(-0.18);
+    addPart(-width * 0.02, height * 0.18, width * 0.26, height * 0.36, 0xe9f1f6, 0xffffff, 0.95);
+    addOval(width * 0.24, height * 0.08, width * 0.68, height * 0.36, 0xf8fbff, 0xffffff, 0.98);
+    addPart(width * 0.24, height * 0.24, width * 0.48, height * 0.2, 0xe9f1f6, 0xffffff, 0.92);
+    addOval(width * 0.28, height * 0.04, width * 0.42, height * 0.14, 0x273642, 0x91a8b6, 0.9);
+  } else if (kind === "desk") {
+    addPart(0, 0, width, height, 0x4d3f34, 0x9b7459, 0.96);
+    addPart(-width * 0.26, height * 0.18, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
+    addPart(width * 0.26, height * 0.18, width * 0.18, height * 0.45, 0x2f2721, 0x7a5b45, 0.98);
+  } else if (kind === "monitor") {
+    addPart(0, 0, width, Math.max(10, height), 0x173142, 0x6bd3ff, 0.96);
+    addPart(-width * 0.2, 0, width * 0.18, Math.max(5, height * 0.55), 0x75e1ff, 0xd7f7ff, 0.9);
+    addPart(width * 0.18, 0, width * 0.22, Math.max(5, height * 0.55), 0x2bc3ff, 0xd7f7ff, 0.88);
+  } else if (kind === "weapon_rack") {
+    addPart(0, 0, width, Math.max(8, height), 0x3d4650, 0x8b929a, 0.96);
+    addPart(-width * 0.22, -height * 0.1, width * 0.12, height + 14, 0xc7d1db, 0xffd166, 0.96).setRotation(-0.28);
+    addPart(width * 0.18, -height * 0.05, width * 0.12, height + 14, 0xaab5bf, 0xffd166, 0.96).setRotation(0.22);
+  } else if (kind === "supply_shelf") {
+    addPart(0, 0, width, height, 0x5f4938, 0xb28b63, 0.92);
+    addPart(-width * 0.24, -height * 0.16, width * 0.22, height * 0.24, 0xd6a04f, 0xffd166, 0.94);
+    addPart(width * 0.16, -height * 0.12, width * 0.28, height * 0.2, 0x566b7f, 0x90a9bf, 0.94);
+    addPart(0, height * 0.22, width * 0.76, Math.max(4, height * 0.12), 0x2f2721, 0x9b7459, 0.9);
+  } else if (kind === "supply_boxes") {
+    addPart(-width * 0.18, height * 0.08, width * 0.42, height * 0.62, 0xd6a04f, 0xffd166, 0.94);
+    addPart(width * 0.18, -height * 0.08, width * 0.36, height * 0.52, 0xb28b63, 0xffd166, 0.92);
+    addPart(-width * 0.18, -height * 0.16, width * 0.3, Math.max(4, height * 0.12), 0xffefb0, 0xffd166, 0.78);
+    addPart(width * 0.2, -height * 0.28, width * 0.22, Math.max(4, height * 0.1), 0x566b7f, 0x90a9bf, 0.9);
+  } else if (kind === "floor_label") {
+    addPart(0, 0, width, height, 0xffd166, 0xfff0b8, 0.52);
+    addPart(-width * 0.24, 0, width * 0.12, height * 1.5, 0x263341, 0xfff0b8, 0.72);
+    addPart(0, 0, width * 0.12, height * 1.5, 0x263341, 0xfff0b8, 0.72);
+    addPart(width * 0.24, 0, width * 0.12, height * 1.5, 0x263341, 0xfff0b8, 0.72);
+  } else if (kind === "control_panel") {
+    addPart(0, 0, width, height, 0x173142, 0x6bd3ff, 0.94);
+    addPart(-width * 0.22, -height * 0.08, width * 0.2, height * 0.28, 0x75e1ff, 0xd7f7ff, 0.9);
+    addPart(width * 0.08, -height * 0.08, width * 0.16, height * 0.22, 0x2bc3ff, 0xd7f7ff, 0.88);
+    addPart(width * 0.28, height * 0.22, width * 0.12, height * 0.12, 0xff5f56, 0xffb3b0, 0.92);
+  } else if (kind === "camera_marker") {
+    addPart(0, 0, width, height, 0x3d4650, 0xd5dde5, 0.94);
+    addPart(width * 0.16, 0, width * 0.34, height * 0.52, 0x111820, 0x6bd3ff, 0.96);
+    addPart(-width * 0.28, -height * 0.2, width * 0.16, height * 0.2, 0x8b929a, 0xd5dde5, 0.9);
+    addPart(-width * 0.32, height * 0.24, width * 0.18, height * 0.18, 0x6bd3ff, 0xd7f7ff, 0.78);
+  } else if (kind === "status_lights") {
+    addPart(0, 0, width, height, 0x173142, 0x6bd3ff, 0.86);
+    addPart(-width * 0.26, 0, width * 0.12, height * 1.35, 0x6bd3ff, 0xd7f7ff, 0.9);
+    addPart(0, 0, width * 0.12, height * 1.35, 0xffd166, 0xfff0b8, 0.9);
+    addPart(width * 0.26, 0, width * 0.12, height * 1.35, 0xff5f56, 0xffb3b0, 0.92);
+  } else {
+    addPart(0, 0, width, height, setDressingFill(kind), setDressingStroke(kind), setDressingAlpha(kind));
+    addPart(0, -height * 0.2, width * 0.75, Math.max(4, height * 0.18), setDressingStroke(kind), setDressingFill(kind), 0.65);
+  }
+
+  return scene.add.container(0, 0, parts);
+}
+
+function addRoomDetails(scene: Phaser.Scene): Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Arc> {
+  const details: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Arc> = [];
+  const addRect = (
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    color: number,
+    alpha: number,
+    depth = 0,
+    strokeColor?: number,
+  ): Phaser.GameObjects.Rectangle => {
+    const rect = scene.add.rectangle(world(x), world(y), world(width), world(height), color, alpha);
+    rect.setDepth(depth);
+    if (strokeColor !== undefined) {
+      rect.setStrokeStyle(1, strokeColor, 0.45);
+    }
+    details.push(rect);
+    return rect;
+  };
+  const addGlow = (x: number, y: number, radius: number, color: number, alpha: number): Phaser.GameObjects.Arc => {
+    const glow = scene.add.circle(world(x), world(y), world(radius), color, alpha).setBlendMode("ADD");
+    glow.setDepth(1);
+    details.push(glow);
+    return glow;
+  };
+
+  addRect(5, 2.48, 8.2, 2.95, 0x1f2c38, 0.78, 0, 0x465b6c);
+  addRect(5, 3.92, 8.2, 0.12, 0x0b1118, 0.72, 4);
+  addRect(14.9, 7.34, 4.2, 2.7, 0x1a2430, 0.76, 0, 0x405568);
+  addRect(20.75, 2.5, 7.5, 3.1, 0x172433, 0.68, 0, 0x465b6c);
+  addRect(13, 7.3, 0.12, 2.4, 0x081018, 0.52, 4);
+  addRect(17.12, 7.3, 0.12, 2.4, 0x081018, 0.52, 4);
+  addRect(15.05, 8.72, 4.0, 0.12, 0x081018, 0.6, 4);
+  addRect(14.2, 7.9, 0.76, 0.08, 0xffd166, 0.36, 2);
+  addRect(16.08, 7.9, 0.62, 0.06, 0xffd166, 0.34, 2);
+  addRect(15.72, 6.38, 0.48, 0.05, 0xb28b63, 0.42, 2);
+
+  for (const x of [2.5, 5.35, 7.8, 10.5, 13.5, 16.5, 19.5, 22.5]) {
+    addRect(x, 9.02, 0.05, 1.85, 0x465b6c, 0.24, 0);
+  }
+  for (const y of [5.02, 6.98, 8.98]) {
+    addRect(16.5, y, 15.0, 0.05, 0x465b6c, 0.22, 0);
+  }
+  addRect(18.55, 1.75, 0.36, 0.07, 0x75e1ff, 0.42, 2);
+  addRect(20.85, 2.08, 0.24, 0.06, 0x75e1ff, 0.42, 2);
+  addRect(23.25, 2.95, 0.16, 0.06, 0xff5f56, 0.46, 2);
+
+  addGlow(20.2, 2.1, 1.1, 0x6bd3ff, 0.12);
+  addGlow(15.1, 7.35, 0.85, 0xffd166, 0.07);
+  addGlow(16.05, 7.85, 0.52, 0xffd166, 0.06);
+  addGlow(18.55, 1.75, 0.72, 0x6bd3ff, 0.08);
+
+  return details;
+}
+
 export class GameRenderer {
   private objects: RenderObjects | null = null;
   private lastNoiseRippleAtMs = Number.NEGATIVE_INFINITY;
+  private readonly pulsingHealingPickups = new Set<string>();
+  private playerImageKey: string | null = null;
+  private lastPlayerRenderPosition: Vector | null = null;
 
   describe(snapshot: SimulationSnapshot): RenderDescriptors {
     return {
@@ -177,6 +798,8 @@ export class GameRenderer {
         x: world(snapshot.player.position.x),
         y: world(snapshot.player.position.y),
         hidden: snapshot.player.hiddenIn !== null,
+        facing: { ...snapshot.player.facing },
+        visual: playerVisual(),
       },
       guards: snapshot.guards.map((guard) => ({
         id: guard.id,
@@ -189,6 +812,8 @@ export class GameRenderer {
         hiddenBody: Boolean(guard.bodyHiddenIn),
         health: guard.health ? { ...guard.health } : undefined,
         suspicion: guard.suspicion,
+        spriteFacingX: spriteFacingX(guard.facing),
+        visual: guardVisual(guard.facing),
         visionCone: guardCone(guard),
       })),
       hidingSpots: prisonMap.hidingSpots.map((spot) => ({
@@ -206,6 +831,15 @@ export class GameRenderer {
         y: world(cover.position.y),
         width: world(cover.width),
         height: world(cover.height),
+      })),
+      setDressingObjects: prisonMap.setDressingObjects.map((object) => ({
+        id: object.id,
+        kind: object.kind,
+        x: world(object.position.x),
+        y: world(object.position.y),
+        width: world(object.width),
+        height: world(object.height),
+        visual: object.kind === "prisoner" ? npcPrisonerVisual(object.id) : null,
       })),
       pebbles: snapshot.pebbles.map((pebble) => ({
         id: pebble.id,
@@ -243,7 +877,8 @@ export class GameRenderer {
         hingeY: world(door.position.y),
         originX: 0,
         originY: 0.5,
-        visualRotation: door.open ? Math.PI / 2 : 0,
+        visualRotation: door.open ? (Math.PI / 2) * door.swingDirection : 0,
+        swingDirection: door.swingDirection,
       })),
       doorKeyPickups: snapshot.doorKeyPickups.map((pickup) => ({
         id: pickup.id,
@@ -285,10 +920,12 @@ export class GameRenderer {
     for (let y = 0; y < prisonMap.height; y += 1) {
       for (let x = 0; x < prisonMap.width; x += 1) {
         const isWall = prisonMap.tiles[y][x] === "#";
+        const tileCenterX = world(x + 0.5);
+        const tileCenterY = world(y + 0.5);
         const rect = scene.add
           .rectangle(
-            world(x + 0.5),
-            world(y + 0.5),
+            tileCenterX,
+            tileCenterY,
             renderScale,
             renderScale,
             isWall ? 0x111820 : 0x263341,
@@ -296,8 +933,34 @@ export class GameRenderer {
           .setStrokeStyle(1, isWall ? 0x334151 : 0x34495c, isWall ? 0.75 : 0.25);
         if (isWall) {
           walls.push(rect);
+          walls.push(
+            scene.add
+              .rectangle(tileCenterX, world(y + 0.16), renderScale, world(0.14), 0x526171, 0.52)
+              .setDepth(2),
+          );
+          if (prisonMap.tiles[y + 1]?.[x] !== "#") {
+            walls.push(
+              scene.add
+                .rectangle(tileCenterX, world(y + 0.92), renderScale, world(0.16), 0x071018, 0.42)
+                .setDepth(2),
+            );
+          }
         } else {
           floors.push(rect);
+          if ((x * 7 + y * 11) % 9 === 0) {
+            floors.push(
+              scene.add
+                .rectangle(
+                  tileCenterX + world(0.18),
+                  tileCenterY - world(0.14),
+                  world(0.42),
+                  world(0.05),
+                  0x2d3a47,
+                  0.34,
+                )
+                .setDepth(1),
+            );
+          }
         }
       }
     }
@@ -313,15 +976,19 @@ export class GameRenderer {
           .setBlendMode("ADD"),
       );
     }
+    const roomDetails = addRoomDetails(scene);
 
     this.objects = {
       floors,
       walls,
       lights,
+      roomDetails,
       guards: new Map(),
+      guardSilhouettes: new Map(),
       guardCones: new Map(),
       hidingSpots: new Map(),
       coverObjects: new Map(),
+      setDressingObjects: new Map(),
       pebbles: new Map(),
       weaponPickups: new Map(),
       healingPickups: new Map(),
@@ -343,12 +1010,47 @@ export class GameRenderer {
     const objects = this.objects as RenderObjects;
     const descriptors = this.describe(snapshot);
 
-    if (!objects.player) {
-      objects.player = scene.add.circle(descriptors.player.x, descriptors.player.y, 18, 0x8bd3ff);
-      objects.player.setStrokeStyle(3, 0xd7f4ff, 0.9);
+    const playerMoved =
+      this.lastPlayerRenderPosition !== null &&
+      Math.hypot(
+        descriptors.player.x - this.lastPlayerRenderPosition.x,
+        descriptors.player.y - this.lastPlayerRenderPosition.y,
+      ) > 0.05;
+    const playerWalkPhase = (scene.time?.now ?? snapshot.timeMs) / 95;
+    const playerStep = playerMoved && !descriptors.player.hidden ? Math.sin(playerWalkPhase) : 0;
+    const playerWalkFrame = playerMoved && Math.sin(playerWalkPhase * 0.55) > 0;
+    const nextPlayerImageKey = playerImageKey(descriptors.player.facing, playerWalkFrame);
+    if (objects.player && this.playerImageKey !== null && this.playerImageKey !== nextPlayerImageKey) {
+      objects.player.destroy();
+      objects.player = undefined;
     }
-    objects.player.setPosition(descriptors.player.x, descriptors.player.y);
+    if (!objects.player) {
+      objects.player = createPlayerImageSprite(
+        scene,
+        descriptors.player.visual,
+        descriptors.player.facing,
+        playerWalkFrame,
+      );
+      this.playerImageKey = typeof scene.add.image === "function" ? nextPlayerImageKey : null;
+      objects.player.setDepth(18);
+    }
+    const playerBounce = Math.abs(playerStep) * 2.2;
+    const playerSway =
+      playerMoved && Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y)
+        ? Math.sign(descriptors.player.facing.x) * playerStep * 1.4
+        : 0;
+    animatePlayerFeet(objects.player, descriptors.player.facing, playerMoved && !descriptors.player.hidden, playerStep);
+    objects.player.setPosition(descriptors.player.x + playerSway, descriptors.player.y - playerBounce);
+    objects.player.setRotation(playerMoved ? playerStep * 0.035 : 0);
+    if (typeof objects.player.setScale === "function") {
+      const sideStep = Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y);
+      objects.player.setScale(
+        1 + Math.abs(playerStep) * (sideStep ? 0.055 : 0.035),
+        1 - Math.abs(playerStep) * 0.03,
+      );
+    }
     objects.player.setAlpha(descriptors.player.hidden ? 0.42 : 1);
+    this.lastPlayerRenderPosition = { x: descriptors.player.x, y: descriptors.player.y };
 
     for (const spot of descriptors.hidingSpots) {
       const color = spot.bodyOccupied ? 0x5b3240 : spot.type === "locker" ? 0x566b7f : 0x151a22;
@@ -376,6 +1078,34 @@ export class GameRenderer {
       objects.coverObjects.set(cover.id, existing);
     }
 
+    for (const object of descriptors.setDressingObjects) {
+      if (object.visual) {
+        const existing = objects.setDressingObjects.get(object.id);
+        const container =
+          existing && "list" in existing
+            ? existing
+            : createPlayerSprite(scene, object.visual);
+        container.setPosition(object.x, object.y);
+        container.setScale(npcPrisonerSpriteScale);
+        container.setDepth(5);
+        objects.setDressingObjects.set(object.id, container);
+        continue;
+      }
+
+      const existing = objects.setDressingObjects.get(object.id);
+      if ((object.kind === "cot" || object.kind === "toilet") && existing && typeof scene.add.image === "function") {
+        existing.destroy();
+        objects.setDressingObjects.delete(object.id);
+      }
+      const prop =
+        object.kind !== "cot" && object.kind !== "toilet" && existing && "list" in existing
+          ? existing
+          : createSetDressingSprite(scene, object.kind, object.width, object.height);
+      prop.setPosition(object.x, object.y);
+      prop.setDepth(3);
+      objects.setDressingObjects.set(object.id, prop);
+    }
+
     for (const pebble of descriptors.pebbles) {
       const existing =
         objects.pebbles.get(pebble.id) ??
@@ -400,10 +1130,30 @@ export class GameRenderer {
     for (const pickup of descriptors.healingPickups) {
       const existing =
         objects.healingPickups.get(pickup.id) ??
-        scene.add.rectangle(pickup.x, pickup.y, 24, 16, 0xcfffd5, 0.96);
+        (typeof scene.add.image === "function"
+          ? scene.add.image(pickup.x, pickup.y, "bandages").setDisplaySize(32, 32)
+          : scene.add.rectangle(pickup.x, pickup.y, 24, 16, 0xcfffd5, 0.96));
       existing.setPosition(pickup.x, pickup.y);
       existing.setVisible(!pickup.collected);
-      existing.setStrokeStyle(2, 0x72d18b, 0.85);
+      if (pickup.collected) {
+        scene.tweens?.killTweensOf?.(existing);
+        existing.setAlpha?.(1);
+        existing.setScale?.(0.5);
+        this.pulsingHealingPickups.delete(pickup.id);
+      } else if (typeof scene.add.image === "function" && !this.pulsingHealingPickups.has(pickup.id)) {
+        existing.setAlpha?.(1);
+        existing.setScale?.(0.5);
+        scene.tweens?.add?.({
+          targets: existing,
+          scale: 0.57,
+          alpha: 1,
+          duration: 760,
+          ease: "Sine.easeInOut",
+          yoyo: true,
+          repeat: -1,
+        });
+        this.pulsingHealingPickups.add(pickup.id);
+      }
       objects.healingPickups.set(pickup.id, existing);
     }
 
@@ -476,18 +1226,24 @@ export class GameRenderer {
     for (const guard of descriptors.guards) {
       liveGuardIds.add(guard.id);
       let container = objects.guards.get(guard.id);
+      if (container && objects.guardSilhouettes.get(guard.id) !== guard.visual.silhouette) {
+        destroyContainerWithChildren(container);
+        objects.guards.delete(guard.id);
+        objects.guardSilhouettes.delete(guard.id);
+        container = undefined;
+      }
       if (!container) {
-        const body = scene.add.rectangle(0, 0, 32, 38, 0xf08a4b);
-        body.setStrokeStyle(2, 0xffcf99, 0.85);
-        const head = scene.add.circle(0, -23, 11, 0xffc78f);
-        container = scene.add.container(guard.x, guard.y, [body, head]);
+        container = createGuardSprite(scene, guard.visual);
+        container.setDepth(18);
         objects.guards.set(guard.id, container);
+        objects.guardSilhouettes.set(guard.id, guard.visual.silhouette);
       }
       container.setPosition(guard.x, guard.y);
       container.setVisible(!guard.hiddenBody);
       container.setAlpha(guard.bodyState === "active" ? (guard.state === "search" ? 0.88 : 1) : 0.68);
       container.setRotation(guard.bodyState === "dead" ? Math.PI / 2 : guard.bodyState === "knocked_out" ? -Math.PI / 2 : 0);
-      container.setScale(guard.dragging ? 0.92 : 1);
+      const guardScale = guard.dragging ? 0.92 : 1;
+      container.setScale(guard.spriteFacingX * guardScale, guardScale);
 
       let cone = objects.guardCones.get(guard.id);
       if (!cone) {
@@ -512,8 +1268,9 @@ export class GameRenderer {
 
     for (const [id, container] of objects.guards) {
       if (!liveGuardIds.has(id)) {
-        container.destroy();
+        destroyContainerWithChildren(container);
         objects.guards.delete(id);
+        objects.guardSilhouettes.delete(id);
         objects.guardCones.get(id)?.destroy();
         objects.guardCones.delete(id);
       }

@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { createIdempotencyKey } from "../api/GameApiClient";
 import { GameSimulation } from "../game/GameSimulation";
-import type { SimulationInput, Vector } from "../game/types";
+import type { SimulationInput, Vector, WeaponId } from "../game/types";
 import { clampThrowTarget, GameRenderer, renderScale } from "../render/GameRenderer";
 import { Hud } from "../ui/Hud";
 import type { StartRunResponse } from "../../../shared/contracts";
@@ -40,6 +40,7 @@ export class GameScene extends Phaser.Scene {
   private pendingThrowTarget: Vector | null = null;
   private pendingAttackTarget: Vector | null = null;
   private selectedSlot: HudSelectedSlot = "melee";
+  private selectedMeleeWeaponId: WeaponId = "makeshift_knife";
   private aimingPebble = false;
   private pebbleAimStartedAtMs = -1;
   private runData: StartRunResponse = {
@@ -65,6 +66,7 @@ export class GameScene extends Phaser.Scene {
     this.pendingThrowTarget = null;
     this.pendingAttackTarget = null;
     this.selectedSlot = "melee";
+    this.selectedMeleeWeaponId = "makeshift_knife";
     this.aimingPebble = false;
     this.pebbleAimStartedAtMs = -1;
     this.cameras.main.setBackgroundColor("#081018");
@@ -103,7 +105,7 @@ export class GameScene extends Phaser.Scene {
     this.viewRenderer.render(this, snapshot);
     this.updatePebbleAim(snapshot);
     this.viewRenderer.followCamera(this, snapshot);
-    this.hud.update(snapshot, this.selectedSlot);
+    this.hud.update(snapshot, this.selectedSlot, this.selectedMeleeWeapon(snapshot));
   }
 
   update(): void {
@@ -134,7 +136,7 @@ export class GameScene extends Phaser.Scene {
     this.viewRenderer.render(this, snapshot);
     this.updatePebbleAim(snapshot);
     this.viewRenderer.followCamera(this, snapshot);
-    this.hud.update(snapshot, this.selectedSlot);
+    this.hud.update(snapshot, this.selectedSlot, this.selectedMeleeWeapon(snapshot));
 
     if (snapshot.completed && !this.completionShown) {
       this.completionShown = true;
@@ -180,7 +182,11 @@ export class GameScene extends Phaser.Scene {
     const target = this.pendingAttackTarget;
     this.pendingAttackTarget = null;
     if (target) {
-      return { mode: this.selectedSlot, target };
+      return {
+        mode: this.selectedSlot,
+        target,
+        weaponId: this.selectedSlot === "melee" ? this.selectedMeleeWeapon(this.simulation.getSnapshot()) : undefined,
+      };
     }
     return null;
   }
@@ -190,6 +196,9 @@ export class GameScene extends Phaser.Scene {
       this.selectedSlot = "gun";
     }
     if (this.consumeHeld("Digit1", "1", "Numpad1")) {
+      if (this.selectedSlot === "melee") {
+        this.toggleSelectedMeleeWeapon();
+      }
       this.selectedSlot = "melee";
     }
     if (this.consumeHeld("Digit3", "3", "Numpad3")) {
@@ -228,6 +237,14 @@ export class GameScene extends Phaser.Scene {
     const target = this.pendingThrowTarget;
     this.pendingThrowTarget = null;
     return target;
+  }
+
+  private selectedMeleeWeapon(snapshot: ReturnType<GameSimulation["getSnapshot"]>): WeaponId {
+    return this.selectedMeleeWeaponId === "fists" ? "fists" : (snapshot.player?.weapons?.meleeWeaponId ?? "makeshift_knife");
+  }
+
+  private toggleSelectedMeleeWeapon(): void {
+    this.selectedMeleeWeaponId = this.selectedMeleeWeaponId === "fists" ? "makeshift_knife" : "fists";
   }
 
   private updatePebbleAim(snapshot: ReturnType<GameSimulation["getSnapshot"]>): void {

@@ -32,6 +32,7 @@ export type GameApiClientOptions = {
   baseUrl?: string;
   transport?: ApiTransport;
   idempotencyKeyFactory?: () => string;
+  requestTimeoutMs?: number;
 };
 
 export class BlockingApiError extends Error {
@@ -113,10 +114,12 @@ function transportError(context: string, error: unknown): BlockingError["error"]
 export class GameApiClient {
   private readonly transport: ApiTransport;
   private readonly idempotencyKeyFactory: () => string;
+  private readonly requestTimeoutMs: number;
 
   constructor(options: GameApiClientOptions = {}) {
     this.transport = options.transport ?? new FetchTransport(options.baseUrl ?? "http://127.0.0.1:3001");
     this.idempotencyKeyFactory = options.idempotencyKeyFactory ?? defaultIdempotencyKey;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 8000;
   }
 
   async ready(): Promise<Readiness> {
@@ -179,9 +182,24 @@ export class GameApiClient {
     init?: { method?: string; body?: unknown },
   ): Promise<TransportResponse> {
     try {
-      return await this.transport.request(path, init);
+      return await withTimeout(this.transport.request(path, init), this.requestTimeoutMs, context);
     } catch (error) {
       throw new BlockingApiError(transportError(context, error));
     }
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, context: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(`${context} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
 }

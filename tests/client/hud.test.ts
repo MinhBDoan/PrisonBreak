@@ -40,6 +40,14 @@ describe("createHudModel", () => {
     });
   });
 
+  it("can show fists as the selected melee option while a knife is equipped", () => {
+    const simulation = new GameSimulation();
+
+    const model = createHudModel(simulation.getSnapshot(), "melee", "fists");
+
+    expect(model.meleeLabel).toBe("Fists");
+  });
+
   it("labels death as death instead of capture", () => {
     const simulation = new GameSimulation();
     simulation.applyPlayerDamage(100);
@@ -147,6 +155,7 @@ describe("createHudModel", () => {
     expect(createHudModel(simulation.getSnapshot()).prompt).toBe("Press E to drag body");
 
     simulation.step({ direction: { x: 0, y: 0 }, sprint: false, interact: true });
+    expect(createHudModel(simulation.getSnapshot()).prompt).toBe("Press E to drop body");
     simulation.setPlayerPosition(prisonMap.hidingSpots[2].position);
 
     expect(createHudModel(simulation.getSnapshot()).prompt).toBe("Press E to dump body");

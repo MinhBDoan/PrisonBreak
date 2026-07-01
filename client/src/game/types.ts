@@ -2,7 +2,13 @@ import type { ActiveAdaptation, RunEvent, RunOutcome } from "../../../shared/con
 
 export type Vector = { x: number; y: number };
 export type Tile = "floor" | "wall";
-export type CorridorId = "cell_block" | "central_corridor" | "east_corridor" | "security_room" | "exit_hall";
+export type CorridorId =
+  | "cell_block"
+  | "central_corridor"
+  | "storage_room"
+  | "east_corridor"
+  | "security_room"
+  | "exit_hall";
 export type PrisonLevelId = "cell_block" | "security_wing" | "cafeteria_riot" | "maintenance" | "outer_gate";
 export type HidingSpotType = "locker" | "shadow";
 export type GuardState = "patrol" | "investigate" | "search" | "chase" | "return";
@@ -13,7 +19,7 @@ export type SimulationInput = {
   sprint: boolean;
   interact: boolean;
   throwTarget?: Vector | null;
-  attack?: { mode: "melee" | "gun"; target: Vector } | null;
+  attack?: { mode: "melee" | "gun"; target: Vector; weaponId?: WeaponId } | null;
   heal?: boolean;
   reload?: boolean;
 };
@@ -26,6 +32,31 @@ export type HidingSpot = {
 
 export type CoverObject = {
   id: string;
+  position: Vector;
+  width: number;
+  height: number;
+};
+
+export type SetDressingKind =
+  | "bars"
+  | "cot"
+  | "bench"
+  | "floor_marking"
+  | "toilet"
+  | "prisoner"
+  | "desk"
+  | "monitor"
+  | "weapon_rack"
+  | "supply_shelf"
+  | "supply_boxes"
+  | "floor_label"
+  | "control_panel"
+  | "camera_marker"
+  | "status_lights";
+
+export type SetDressingObject = {
+  id: string;
+  kind: SetDressingKind;
   position: Vector;
   width: number;
   height: number;
@@ -82,6 +113,13 @@ export type PatrolRoute = {
   points: PatrolPoint[];
 };
 
+export type StationaryGuard = {
+  id: string;
+  position: Vector;
+  facing: Vector;
+  corridor: CorridorId;
+};
+
 export type PrisonMap = {
   width: number;
   height: number;
@@ -96,7 +134,9 @@ export type PrisonMap = {
   doorKeyCarriers: DoorKeyCarrier[];
   hidingSpots: HidingSpot[];
   coverObjects: CoverObject[];
+  setDressingObjects: SetDressingObject[];
   patrolRoutes: PatrolRoute[];
+  stationaryGuards: StationaryGuard[];
   reserveGuardSpawn: Vector;
 };
 
@@ -110,6 +150,7 @@ export type PrisonLevel = {
 
 export type PlayerState = {
   position: Vector;
+  facing: Vector;
   hasKey: boolean;
   hiddenIn: string | null;
   draggingBodyId: string | null;
@@ -158,6 +199,7 @@ export type GuardStateSnapshot = {
   captureProgress: number;
   inspectionTarget: string | null;
   bodyHiddenIn?: string;
+  combatLockedOnPlayer?: boolean;
 };
 
 export type AppliedAdaptations = {
@@ -195,7 +237,7 @@ export type SimulationSnapshot = {
   pebbles: Array<Pebble & { collected: boolean }>;
   weaponPickups: Array<WeaponPickup & { collected: boolean }>;
   healingPickups: Array<HealingPickup & { collected: boolean }>;
-  doors: Array<Door & { open: boolean; unlocked: boolean }>;
+  doors: Array<Door & { open: boolean; unlocked: boolean; swingDirection: 1 | -1 }>;
   doorKeyPickups: Array<DoorKeyPickup & { collected: boolean }>;
   completed: { outcome: RunOutcome; durationMs: number } | null;
   adaptations: AppliedAdaptations;

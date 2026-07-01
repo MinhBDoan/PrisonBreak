@@ -170,4 +170,23 @@ describe("adaptive run loop contract", () => {
       },
     });
   });
+
+  it("turns stalled service requests into retryable blocking errors", async () => {
+    const client = new GameApiClient({
+      requestTimeoutMs: 10,
+      transport: {
+        async request() {
+          return new Promise(() => undefined);
+        },
+      },
+    });
+
+    await expect(client.ready()).rejects.toMatchObject({
+      blockingError: {
+        code: "service_unreachable",
+        message: expect.stringContaining("timed out"),
+        retryable: true,
+      },
+    });
+  });
 });
