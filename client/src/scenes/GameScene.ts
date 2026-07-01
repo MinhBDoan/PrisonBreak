@@ -313,6 +313,7 @@ export class GameScene extends Phaser.Scene {
             event.position,
             event.payload.targetPosition as Vector,
             weapon.kind === "gun" ? "gun" : "melee",
+            event.payload.weaponId as keyof typeof weapons,
           );
         }
         continue;

@@ -579,12 +579,14 @@ describe("GameScene", () => {
       { x: 2, y: 2 },
       { x: 5, y: 2 },
       "gun",
+      "pistol",
     );
     expect(rendererCalls.spawnCombatFeedback).toHaveBeenCalledWith(
       scene,
       { x: 2, y: 2 },
       { x: 2.7, y: 2 },
       "melee",
+      "makeshift_knife",
     );
     expect(rendererCalls.spawnCombatFeedback).toHaveBeenCalledWith(
       scene,

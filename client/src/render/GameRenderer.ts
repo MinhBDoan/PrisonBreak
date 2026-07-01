@@ -9,6 +9,7 @@ import type {
   SetDressingKind,
   SimulationSnapshot,
   Vector,
+  WeaponId,
   WeaponPickup,
 } from "../game/types";
 
@@ -126,7 +127,7 @@ type RenderObjects = {
   aimMarker?: Phaser.GameObjects.Arc;
   throwPebble?: Phaser.GameObjects.Arc;
   bodyDragLine?: Phaser.GameObjects.Graphics;
-  combatEffects: Phaser.GameObjects.Graphics[];
+  combatEffects: Phaser.GameObjects.GameObject[];
   key?: Phaser.GameObjects.Star;
   exit?: Phaser.GameObjects.Rectangle;
   noiseRipple?: Phaser.GameObjects.Arc;
@@ -435,7 +436,20 @@ function createPlayerSprite(scene: Phaser.Scene, visual: CharacterVisualDescript
   return scene.add.container(0, 0, parts);
 }
 
-function playerImageKey(facing: Vector, walking = false): string {
+function playerFacingName(facing: Vector): "down" | "left" | "right" | "up" {
+  if (Math.abs(facing.x) > Math.abs(facing.y)) {
+    if (facing.x < 0) {
+      return "left";
+    }
+    return "right";
+  }
+  return facing.y < 0 ? "up" : "down";
+}
+
+function playerImageKey(facing: Vector, walking = false, action: "idle" | "knife" = "idle"): string {
+  if (action === "knife") {
+    return `player-raccoon-${playerFacingName(facing)}-knife`;
+  }
   const suffix = walking ? "-walk" : "";
   if (Math.abs(facing.x) > Math.abs(facing.y)) {
     return facing.x < 0 ? "player-raccoon-right" : "player-raccoon-left";
@@ -448,15 +462,16 @@ function createPlayerImageSprite(
   visual: CharacterVisualDescriptor,
   facing: Vector,
   walking = false,
+  action: "idle" | "knife" = "idle",
 ): Phaser.GameObjects.Container {
   if (visual.species !== "raccoon" || typeof scene.add.image !== "function") {
     return createPlayerSprite(scene, visual);
   }
   const shadow = scene.add.ellipse(0, 18, 31, 10, 0x081018, 0.24);
-  const sprite = scene.add.image(0, -4, playerImageKey(facing, walking));
-  sprite.setDisplaySize(52, 63);
-  const footBack = addPixelRect(scene, -7, 27, 9, 5, 0x172231, 0.98);
-  const footFront = addPixelRect(scene, 7, 27, 9, 5, 0x172231, 0.98);
+  const sprite = scene.add.image(0, -4, playerImageKey(facing, walking, action));
+  sprite.setDisplaySize(action === "knife" ? 82 : 52, 63);
+  const footBack = addPixelRect(scene, -7, 27, 9, 5, 0x172231, 0);
+  const footFront = addPixelRect(scene, 7, 27, 9, 5, 0x172231, 0);
   const parts: Phaser.GameObjects.GameObject[] = [shadow, sprite, footBack, footFront];
   if (visual.playerHighlight) {
     parts.push(addPixelRect(scene, 0, -39, 14, 3, visual.accentColor, 0.98));
@@ -479,8 +494,8 @@ function animatePlayerFeet(
   if (!walking) {
     footBack.setPosition(-7, 27);
     footFront.setPosition(7, 27);
-    footBack.setAlpha(0.98);
-    footFront.setAlpha(0.98);
+    footBack.setAlpha(0);
+    footFront.setAlpha(0);
     return;
   }
 
@@ -493,8 +508,8 @@ function animatePlayerFeet(
     footBack.setPosition(-8, 27 + stride * 3);
     footFront.setPosition(8, 27 - stride * 3);
   }
-  footBack.setAlpha(stride > 0 ? 0.72 : 1);
-  footFront.setAlpha(stride > 0 ? 1 : 0.72);
+  footBack.setAlpha(0);
+  footFront.setAlpha(0);
 }
 
 function createGuardSprite(scene: Phaser.Scene, visual: CharacterVisualDescriptor): Phaser.GameObjects.Container {
@@ -791,6 +806,8 @@ export class GameRenderer {
   private readonly pulsingHealingPickups = new Set<string>();
   private playerImageKey: string | null = null;
   private lastPlayerRenderPosition: Vector | null = null;
+  private lastPlayerMovedAtMs = Number.NEGATIVE_INFINITY;
+  private playerKnifeAttack: { facing: Vector; startedAtMs: number } | null = null;
 
   describe(snapshot: SimulationSnapshot): RenderDescriptors {
     return {
@@ -1018,10 +1035,20 @@ export class GameRenderer {
         descriptors.player.x - this.lastPlayerRenderPosition.x,
         descriptors.player.y - this.lastPlayerRenderPosition.y,
       ) > 0.05;
-    const playerWalkPhase = (scene.time?.now ?? snapshot.timeMs) / 95;
-    const playerStep = playerMoved && !descriptors.player.hidden ? Math.sin(playerWalkPhase) : 0;
-    const playerWalkFrame = playerMoved && Math.sin(playerWalkPhase * 0.55) > 0;
-    const nextPlayerImageKey = playerImageKey(descriptors.player.facing, playerWalkFrame);
+    const renderTimeMs = scene.time?.now ?? snapshot.timeMs;
+    if (playerMoved) {
+      this.lastPlayerMovedAtMs = renderTimeMs;
+    }
+    const playerWalking = !descriptors.player.hidden && renderTimeMs - this.lastPlayerMovedAtMs < 180;
+    const playerWalkPhase = renderTimeMs / 95;
+    const playerStep = playerWalking ? Math.sin(playerWalkPhase) : 0;
+    const playerWalkFrame =
+      playerWalking && Math.floor(renderTimeMs / 170) % 2 === 1;
+    const knifeAttackActive =
+      this.playerKnifeAttack !== null && renderTimeMs - this.playerKnifeAttack.startedAtMs < 240;
+    const playerAction = knifeAttackActive ? "knife" : "idle";
+    const playerFacing = knifeAttackActive ? this.playerKnifeAttack?.facing ?? descriptors.player.facing : descriptors.player.facing;
+    const nextPlayerImageKey = playerImageKey(playerFacing, playerWalkFrame && !knifeAttackActive, playerAction);
     if (objects.player && this.playerImageKey !== null && this.playerImageKey !== nextPlayerImageKey) {
       objects.player.destroy();
       objects.player = undefined;
@@ -1030,20 +1057,21 @@ export class GameRenderer {
       objects.player = createPlayerImageSprite(
         scene,
         descriptors.player.visual,
-        descriptors.player.facing,
-        playerWalkFrame,
+        playerFacing,
+        playerWalkFrame && !knifeAttackActive,
+        playerAction,
       );
       this.playerImageKey = typeof scene.add.image === "function" ? nextPlayerImageKey : null;
       objects.player.setDepth(18);
     }
     const playerBounce = Math.abs(playerStep) * 2.2;
     const playerSway =
-      playerMoved && Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y)
+      playerWalking && Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y)
         ? Math.sign(descriptors.player.facing.x) * playerStep * 1.4
         : 0;
-    animatePlayerFeet(objects.player, descriptors.player.facing, playerMoved && !descriptors.player.hidden, playerStep);
+    animatePlayerFeet(objects.player, descriptors.player.facing, playerWalking, playerStep);
     objects.player.setPosition(descriptors.player.x + playerSway, descriptors.player.y - playerBounce);
-    objects.player.setRotation(playerMoved ? playerStep * 0.035 : 0);
+    objects.player.setRotation(playerWalking ? playerStep * 0.035 : 0);
     if (typeof objects.player.setScale === "function") {
       const sideStep = Math.abs(descriptors.player.facing.x) > Math.abs(descriptors.player.facing.y);
       objects.player.setScale(
@@ -1475,20 +1503,29 @@ export class GameRenderer {
     origin: Vector,
     target: Vector,
     kind: "melee" | "gun" | "guard_melee",
+    weaponId?: WeaponId,
   ): void {
     if (!this.objects) {
       this.mount(scene);
     }
     const objects = this.objects as RenderObjects;
-    const graphic = scene.add.graphics();
-    objects.combatEffects.push(graphic);
-    graphic.setDepth(35);
-
     const originX = world(origin.x);
     const originY = world(origin.y);
     const targetX = world(target.x);
     const targetY = world(target.y);
     const angle = Math.atan2(targetY - originY, targetX - originX);
+
+    if (kind === "melee" && weaponId === "makeshift_knife") {
+      this.playerKnifeAttack = {
+        facing: { x: Math.cos(angle), y: Math.sin(angle) },
+        startedAtMs: scene.time?.now ?? 0,
+      };
+      return;
+    }
+
+    const graphic = scene.add.graphics();
+    objects.combatEffects.push(graphic);
+    graphic.setDepth(35);
 
     if (kind === "gun") {
       graphic.lineStyle(4, 0xfff0b8, 0.95);
