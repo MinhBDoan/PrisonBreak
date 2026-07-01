@@ -117,8 +117,8 @@ type RenderObjects = {
   hidingSpots: Map<string, Phaser.GameObjects.Rectangle>;
   coverObjects: Map<string, Phaser.GameObjects.Rectangle>;
   setDressingObjects: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Container>;
-  pebbles: Map<string, Phaser.GameObjects.Arc>;
-  weaponPickups: Map<string, Phaser.GameObjects.Rectangle>;
+  pebbles: Map<string, Phaser.GameObjects.Image | Phaser.GameObjects.Arc>;
+  weaponPickups: Map<string, Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle>;
   healingPickups: Map<string, Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle>;
   doors: Map<string, Phaser.GameObjects.Rectangle>;
   doorKeyPickups: Map<string, Phaser.GameObjects.Star>;
@@ -786,6 +786,8 @@ function addRoomDetails(scene: Phaser.Scene): Array<Phaser.GameObjects.Rectangle
 export class GameRenderer {
   private objects: RenderObjects | null = null;
   private lastNoiseRippleAtMs = Number.NEGATIVE_INFINITY;
+  private readonly pulsingPebbles = new Set<string>();
+  private readonly pulsingWeaponPickups = new Set<string>();
   private readonly pulsingHealingPickups = new Set<string>();
   private playerImageKey: string | null = null;
   private lastPlayerRenderPosition: Vector | null = null;
@@ -1109,21 +1111,65 @@ export class GameRenderer {
     for (const pebble of descriptors.pebbles) {
       const existing =
         objects.pebbles.get(pebble.id) ??
-        scene.add.circle(pebble.x, pebble.y, 6, 0xb8aea1, 0.95);
+        (typeof scene.add.image === "function"
+          ? scene.add.image(pebble.x, pebble.y, "pebble").setDisplaySize(20, 20)
+          : scene.add.circle(pebble.x, pebble.y, 6, 0xb8aea1, 0.95));
       existing.setPosition(pebble.x, pebble.y);
       existing.setVisible(!pebble.collected);
-      existing.setStrokeStyle(2, 0xefe1c8, 0.4);
+      if ("setStrokeStyle" in existing) {
+        existing.setStrokeStyle(2, 0xefe1c8, 0.4);
+      } else if (pebble.collected) {
+        scene.tweens?.killTweensOf?.(existing);
+        existing.setAlpha?.(1);
+        existing.setScale?.(0.31);
+        this.pulsingPebbles.delete(pebble.id);
+      } else if (!this.pulsingPebbles.has(pebble.id)) {
+        existing.setAlpha?.(1);
+        existing.setScale?.(0.31);
+        scene.tweens?.add?.({
+          targets: existing,
+          scale: 0.36,
+          alpha: 1,
+          duration: 920,
+          ease: "Sine.easeInOut",
+          yoyo: true,
+          repeat: -1,
+        });
+        this.pulsingPebbles.add(pebble.id);
+      }
       objects.pebbles.set(pebble.id, existing);
     }
 
     for (const pickup of descriptors.weaponPickups) {
       const existing =
         objects.weaponPickups.get(pickup.id) ??
-        scene.add.rectangle(pickup.x, pickup.y, 26, 12, 0x9aa7b4, 0.96);
+        (pickup.weaponId === "pistol" && typeof scene.add.image === "function"
+          ? scene.add.image(pickup.x, pickup.y, "pistol").setDisplaySize(38, 38)
+          : scene.add.rectangle(pickup.x, pickup.y, 26, 12, 0x9aa7b4, 0.96));
       existing.setPosition(pickup.x, pickup.y);
       existing.setVisible(!pickup.collected);
-      existing.setRotation(-0.18);
-      existing.setStrokeStyle(2, 0xffd166, 0.78);
+      if ("setStrokeStyle" in existing) {
+        existing.setRotation(-0.18);
+        existing.setStrokeStyle(2, 0xffd166, 0.78);
+      } else if (pickup.collected) {
+        scene.tweens?.killTweensOf?.(existing);
+        existing.setAlpha?.(1);
+        existing.setScale?.(0.59);
+        this.pulsingWeaponPickups.delete(pickup.id);
+      } else if (!this.pulsingWeaponPickups.has(pickup.id)) {
+        existing.setAlpha?.(1);
+        existing.setScale?.(0.59);
+        scene.tweens?.add?.({
+          targets: existing,
+          scale: 0.65,
+          alpha: 1,
+          duration: 820,
+          ease: "Sine.easeInOut",
+          yoyo: true,
+          repeat: -1,
+        });
+        this.pulsingWeaponPickups.add(pickup.id);
+      }
       objects.weaponPickups.set(pickup.id, existing);
     }
 
