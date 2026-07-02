@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
 import { prisonMap } from "../../client/src/game/map";
-import { clampThrowTarget, GameRenderer } from "../../client/src/render/GameRenderer";
+import { clampThrowTarget, doorSpriteStage, GameRenderer } from "../../client/src/render/GameRenderer";
 import type { SimulationSnapshot } from "../../client/src/game/types";
 
 describe("GameRenderer", () => {
+  it("keeps starter cell door sprites in distinct closed and open stages", () => {
+    expect(doorSpriteStage(false, Number.NEGATIVE_INFINITY, 1000)).toBe("closed");
+    expect(doorSpriteStage(true, 1000, 1100)).toBe("open");
+    expect(doorSpriteStage(false, 1000, 1100)).toBe("closed");
+  });
+
   it("clamps pebble aim previews to the throw range", () => {
     expect(clampThrowTarget({ x: 2, y: 2 }, { x: 4, y: 2 })).toEqual({ x: 4, y: 2 });
     expect(clampThrowTarget({ x: 2, y: 2 }, { x: 20, y: 2 })).toEqual({ x: 6, y: 2 });

@@ -107,8 +107,8 @@ export type RenderDescriptors = {
 };
 
 type RenderObjects = {
-  floors: Phaser.GameObjects.Rectangle[];
-  walls: Phaser.GameObjects.Rectangle[];
+  floors: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  walls: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   lights: Phaser.GameObjects.Arc[];
   roomDetails: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Arc>;
   player?: Phaser.GameObjects.Container;
@@ -121,7 +121,7 @@ type RenderObjects = {
   pebbles: Map<string, Phaser.GameObjects.Image | Phaser.GameObjects.Arc>;
   weaponPickups: Map<string, Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle>;
   healingPickups: Map<string, Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle>;
-  doors: Map<string, Phaser.GameObjects.Rectangle>;
+  doors: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   doorKeyPickups: Map<string, Phaser.GameObjects.Star>;
   aimLine?: Phaser.GameObjects.Graphics;
   aimMarker?: Phaser.GameObjects.Arc;
@@ -135,6 +135,61 @@ type RenderObjects = {
 
 function world(value: number): number {
   return value * renderScale;
+}
+
+function pixelFloorTexture(x: number, y: number): string {
+  if ((x * 7 + y * 11) % 13 === 0) {
+    return "cell-floor-stained";
+  }
+  return (x + y) % 2 === 0 ? "cell-floor-cracked-a" : "cell-floor-cracked-b";
+}
+
+function pixelWallTexture(x: number, y: number): string {
+  return (x * 3 + y * 5) % 2 === 0 ? "cell-wall-panel-a" : "cell-wall-panel-b";
+}
+
+function addEnvironmentTile(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  texture: string,
+  fallbackColor: number,
+  strokeColor: number,
+  strokeAlpha: number,
+): Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image {
+  const sceneAdd = scene.add as Phaser.GameObjects.GameObjectFactory & {
+    image?: (x: number, y: number, texture: string) => Phaser.GameObjects.Image;
+  };
+
+  if (sceneAdd.image) {
+    return sceneAdd
+      .image(x, y, texture)
+      .setDisplaySize(renderScale, renderScale)
+      .setOrigin(0.5)
+      .setDepth(0);
+  }
+
+  return scene.add
+    .rectangle(x, y, renderScale, renderScale, fallbackColor)
+    .setStrokeStyle(1, strokeColor, strokeAlpha);
+}
+
+function isDoorImage(
+  door: Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image,
+): door is Phaser.GameObjects.Image {
+  return typeof (door as Phaser.GameObjects.Image).setTexture === "function";
+}
+
+export type DoorSpriteStage = "closed" | "open";
+
+export function doorSpriteStage(open: boolean, changedAtMs: number, renderTimeMs: number): DoorSpriteStage {
+  void changedAtMs;
+  void renderTimeMs;
+  return open ? "open" : "closed";
+}
+
+function starterCellDoorTexture(stage: DoorSpriteStage): string {
+  return stage === "open" ? "cell-door-open" : "cell-door-closed";
 }
 
 function arcControlPoint(from: Vector, to: Vector, lift: number): Vector {
@@ -664,6 +719,10 @@ function createSetDressingSprite(
     const sprite = scene.add.image(0, 0, "toilet-side");
     sprite.setDisplaySize(width * 2.05, height * 1.82);
     parts.push(sprite);
+  } else if (kind === "bars" && typeof scene.add.image === "function") {
+    const sprite = scene.add.image(0, 0, "cell-bars-panel");
+    sprite.setDisplaySize(width, Math.max(24, height + 38));
+    parts.push(sprite);
   } else if (kind === "bars") {
     const barCount = Math.max(3, Math.floor(width / 12));
     addPart(0, 0, width, Math.max(4, height), 0x394958, 0x9aa7b4, 0.72);
@@ -804,6 +863,7 @@ export class GameRenderer {
   private readonly pulsingPebbles = new Set<string>();
   private readonly pulsingWeaponPickups = new Set<string>();
   private readonly pulsingHealingPickups = new Set<string>();
+  private readonly doorVisualStates = new Map<string, { open: boolean; changedAtMs: number }>();
   private playerImageKey: string | null = null;
   private lastPlayerRenderPosition: Vector | null = null;
   private lastPlayerMovedAtMs = Number.NEGATIVE_INFINITY;
@@ -932,8 +992,8 @@ export class GameRenderer {
   }
 
   mount(scene: Phaser.Scene): void {
-    const floors: Phaser.GameObjects.Rectangle[] = [];
-    const walls: Phaser.GameObjects.Rectangle[] = [];
+    const floors: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image> = [];
+    const walls: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image> = [];
     const lights: Phaser.GameObjects.Arc[] = [];
 
     for (let y = 0; y < prisonMap.height; y += 1) {
@@ -941,15 +1001,15 @@ export class GameRenderer {
         const isWall = prisonMap.tiles[y][x] === "#";
         const tileCenterX = world(x + 0.5);
         const tileCenterY = world(y + 0.5);
-        const rect = scene.add
-          .rectangle(
-            tileCenterX,
-            tileCenterY,
-            renderScale,
-            renderScale,
-            isWall ? 0x111820 : 0x263341,
-          )
-          .setStrokeStyle(1, isWall ? 0x334151 : 0x34495c, isWall ? 0.75 : 0.25);
+        const rect = addEnvironmentTile(
+          scene,
+          tileCenterX,
+          tileCenterY,
+          isWall ? pixelWallTexture(x, y) : pixelFloorTexture(x, y),
+          isWall ? 0x111820 : 0x263341,
+          isWall ? 0x334151 : 0x34495c,
+          isWall ? 0.75 : 0.25,
+        );
         if (isWall) {
           walls.push(rect);
           walls.push(
@@ -1109,6 +1169,12 @@ export class GameRenderer {
     }
 
     for (const object of descriptors.setDressingObjects) {
+      if (object.id === "starter_cell_bars" && typeof scene.add.image === "function") {
+        objects.setDressingObjects.get(object.id)?.destroy();
+        objects.setDressingObjects.delete(object.id);
+        continue;
+      }
+
       if (object.visual) {
         const existing = objects.setDressingObjects.get(object.id);
         const container =
@@ -1232,15 +1298,44 @@ export class GameRenderer {
     }
 
     for (const door of descriptors.doors) {
-      const existing =
-        objects.doors.get(door.id) ??
-        scene.add.rectangle(door.hingeX, door.hingeY, door.width, door.height, 0x8f5f34, 0.98);
-      existing.setOrigin(door.originX, door.originY);
-      existing.setPosition(door.hingeX, door.hingeY);
-      existing.setSize(door.width, door.height);
-      existing.setRotation(door.visualRotation);
-      existing.setFillStyle(door.open ? 0x51745a : door.unlocked ? 0x8f5f34 : 0x5a3a28, door.open ? 0.72 : 0.98);
-      existing.setStrokeStyle(3, door.unlocked ? 0xffd166 : 0xc45a4a, 0.86);
+      let existing = objects.doors.get(door.id);
+      if (!existing) {
+        existing =
+          door.id === "starter_cell_door" && typeof scene.add.image === "function"
+            ? scene.add.image(door.hingeX, door.hingeY, "cell-door-closed")
+            : scene.add.rectangle(door.hingeX, door.hingeY, door.width, door.height, 0x8f5f34, 0.98);
+      }
+
+      const visualState = this.doorVisualStates.get(door.id);
+      if (!visualState) {
+        this.doorVisualStates.set(door.id, { open: door.open, changedAtMs: Number.NEGATIVE_INFINITY });
+      } else if (visualState.open !== door.open) {
+        this.doorVisualStates.set(door.id, { open: door.open, changedAtMs: renderTimeMs });
+      }
+      const changedAtMs = this.doorVisualStates.get(door.id)?.changedAtMs ?? Number.NEGATIVE_INFINITY;
+      const stage = doorSpriteStage(door.open, changedAtMs, renderTimeMs);
+
+      if (door.id === "starter_cell_door" && isDoorImage(existing)) {
+        existing.setTexture(starterCellDoorTexture(stage));
+        existing.setOrigin(0.5, 0.78);
+        existing.setPosition(
+          stage === "open" ? door.x - world(0.72) : door.x,
+          door.y + (stage === "open" ? world(0.5) : world(0.18)),
+        );
+        existing.setDisplaySize(
+          stage === "open" ? Math.max(88, door.width * 1.36) : Math.max(66, door.width * 1.42),
+          stage === "open" ? Math.max(118, world(1.44)) : Math.max(82, world(1.08)),
+        );
+        existing.setRotation(0);
+        existing.setDepth(6);
+      } else if (!isDoorImage(existing)) {
+        existing.setOrigin(door.originX, door.originY);
+        existing.setPosition(door.hingeX, door.hingeY);
+        existing.setSize(door.width, door.height);
+        existing.setRotation(door.visualRotation);
+        existing.setFillStyle(door.open ? 0x51745a : door.unlocked ? 0x8f5f34 : 0x5a3a28, door.open ? 0.72 : 0.98);
+        existing.setStrokeStyle(3, door.unlocked ? 0xffd166 : 0xc45a4a, 0.86);
+      }
       objects.doors.set(door.id, existing);
     }
 
