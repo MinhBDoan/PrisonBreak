@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { GameSimulation } from "../../client/src/game/GameSimulation";
 import { prisonMap } from "../../client/src/game/map";
-import { clampThrowTarget, GameRenderer } from "../../client/src/render/GameRenderer";
+import { clampThrowTarget, GameRenderer, playerSpriteDisplaySize } from "../../client/src/render/GameRenderer";
 import type { SimulationSnapshot } from "../../client/src/game/types";
 
 describe("GameRenderer", () => {
+  it("scales the up knife sprite larger so its visible pose matches other knife directions", () => {
+    expect(playerSpriteDisplaySize({ x: 0, y: -1 }, "knife")).toEqual({ width: 94, height: 114 });
+    expect(playerSpriteDisplaySize({ x: 0, y: 1 }, "knife")).toEqual({ width: 63, height: 77 });
+    expect(playerSpriteDisplaySize({ x: 1, y: 0 }, "knife")).toEqual({ width: 82, height: 63 });
+    expect(playerSpriteDisplaySize({ x: 0, y: -1 }, "idle")).toEqual({ width: 52, height: 63 });
+  });
+
   it("clamps pebble aim previews to the throw range", () => {
     expect(clampThrowTarget({ x: 2, y: 2 }, { x: 4, y: 2 })).toEqual({ x: 4, y: 2 });
     expect(clampThrowTarget({ x: 2, y: 2 }, { x: 20, y: 2 })).toEqual({ x: 6, y: 2 });

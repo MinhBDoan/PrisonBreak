@@ -457,6 +457,22 @@ function playerImageKey(facing: Vector, walking = false, action: "idle" | "knife
   return facing.y < 0 ? `player-raccoon-up${suffix}` : `player-raccoon-down${suffix}`;
 }
 
+export function playerSpriteDisplaySize(
+  facing: Vector,
+  action: "idle" | "knife" = "idle",
+): { width: number; height: number } {
+  if (action === "knife") {
+    if (Math.abs(facing.x) > Math.abs(facing.y)) {
+      return { width: 82, height: 63 };
+    }
+    if (facing.y < 0) {
+      return { width: 94, height: 114 };
+    }
+    return { width: 63, height: 77 };
+  }
+  return { width: 52, height: 63 };
+}
+
 function createPlayerImageSprite(
   scene: Phaser.Scene,
   visual: CharacterVisualDescriptor,
@@ -469,7 +485,8 @@ function createPlayerImageSprite(
   }
   const shadow = scene.add.ellipse(0, 18, 31, 10, 0x081018, 0.24);
   const sprite = scene.add.image(0, -4, playerImageKey(facing, walking, action));
-  sprite.setDisplaySize(action === "knife" ? 82 : 52, 63);
+  const displaySize = playerSpriteDisplaySize(facing, action);
+  sprite.setDisplaySize(displaySize.width, displaySize.height);
   const footBack = addPixelRect(scene, -7, 27, 9, 5, 0x172231, 0);
   const footFront = addPixelRect(scene, 7, 27, 9, 5, 0x172231, 0);
   const parts: Phaser.GameObjects.GameObject[] = [shadow, sprite, footBack, footFront];
